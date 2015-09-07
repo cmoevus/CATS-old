@@ -4,7 +4,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-# unicode_literals does not work with numpy's record arrays
+# numpy's record arrays do not work with future unicode_literals
 # from __future__ import unicode_literals
 
 import os
@@ -119,7 +119,7 @@ class Parameters(object):
             e = 'object attribute {0} is read-only'.format(attr)
             raise AttributeError(e)
 
-        # Set the value of proper attribute
+        # Set the value of the proper attribute
         else:
             # Transform all subdicts into Parameters dict
             if type(value) is dict:
@@ -602,19 +602,19 @@ class Dataset(Parameters):
         # Make optimal pairs for all acceptable frame intervals
         # (as defined in max_blink)
         for delta in range(1, self.linkage.max_blink+1):
-
             if verbose is True:
                 print('\rDelta frames: {0}'.format(delta), end='')
                 stdout.flush()
             for f in range(n_frames - delta):
-                # Measure the distances between spots
-                d = np.abs(np.array(frames[f])[:, np.newaxis, :2] - np.array(frames[f+delta])[:, :2])
+                # Matrix of distances between spots
+                d = np.abs(np.array(frames[f])[:, np.newaxis, :2] -
+                           np.array(frames[f+delta])[:, :2])
 
                 # Filter out the spots with distances that excess max_disp in x and/or y
                 disp_filter = d - self.linkage.max_disp >= 0
                 disp_mask = np.logical_or(disp_filter[:, :, 0], disp_filter[:, :, 1])
 
-                # Reduce the 3rd dimension
+                # Reduce to one dimension
                 d = np.sqrt(d[:, :, 0]**2+d[:, :, 1]**2)
 
                 # Find the optimal pairs
@@ -625,8 +625,9 @@ class Dataset(Parameters):
                 pairs = ma.array(d, mask=mask)
 
                 # Organize in pairs, or edges, for graph purposes
-                for s1, s2 in np.array(np.where(pairs.mask is False)).T:
-                    G.add_edge(frames[f][s1][2], frames[f+delta][s2][2], weight=d[s1][s2])
+                for s1, s2 in np.array(np.where(pairs.mask == False)).T:
+                    G.add_edge(frames[f][s1][2], frames[f+delta][s2][2],
+                               weight=d[s1][s2])
 
         # Only keep the tracks that are not ambiguous (1 spot per frame max)
         tracks, a_tracks = list(), list()
@@ -639,41 +640,39 @@ class Dataset(Parameters):
 
             # Ambiguous tracks
             # This is a work in progress. More or less abandoned.
-            elif self.linkage.ambiguous_tracks is True:
-                print(track.number_of_nodes(), track.number_of_edges())
-                track = transitive_reduction(track, t_frames[:, 0])
-                sources, junctions = list(), list()
-                for i in track.in_degree().items():
-                    if i[1] == 0:
-                        sources.append(i[0])
-                    elif i[1] > 1:
-                        junctions.append(i[0])
-                sinks = [i[0] for i in track.out_degree().items() if i[1] == 0]
-                a_tracks.append(sorted(track.nodes(), key=lambda s: self.spots[s][3]))
-
-                print(track.number_of_nodes(), track.number_of_edges())
-                print(sources)
-                print(junctions)
-                print(sinks)
-                a = np.array([(s, self.spots[s][3], self.spots[s][0], self.spots[s][1]) for s in sorted(track.nodes(), key=lambda a: self.spots[a][3])])
-                print([i for i in nx.weakly_connected_components(track)])
-                for b, c, d, e in a:
-                    print(b, '\t', c, '\t', d, '\t', e)
-                sl, f, x, y = a.T
-                plt.figure()
-                plt.subplot(211)
-                plt.scatter(x, y, c=f)
-                plt.subplot(212)
-                nx.draw_networkx(track)
-                plt.show()
+            elif self.linkage.ambiguous_tracks == True:
+                nodes = track.nodes()
+                track = dict([(self.spots[s]['t'], []) for s in nodes])
+                for s in nodes:
+                    track[self.spots[s]['t']].append(s)
+                ts = sorted(track.keys())
+                for t in ts[:-1]:
+                    if len(track[t]) > 1:
+                        now = track[t]
+                        t_after = ts.index(t) + 1
+                        after = track[ts[t_after]]
+                        scores = np.abs(np.array([[self.spots[s]['x'], self.spots[s]['y']] for s in now])[:, np.newaxis] - np.array([[self.spots[s]['x'], self.spots[s]['y']] for s in after]))
+                        scores = scores[:, :, 0] + scores[:, :, 1]
+                        pair = np.where(scores == scores.min())
+                        # print([self.spots[s] for s in now], [self.spots[s] for s in after], pair)
+                        if len(pair[0]) > 1:
+                            pair = (np.array(pair).T)[0]
+                        now, after = [now[pair[0]]], [after[pair[1]]]
+                track = sorted([t[0] for t in track.values()],
+                                key=lambda a: self.spots[a]['t'])
+                ts = [self.spots[s]['t'] for s in track]
+                if len(ts) != len(set(ts)):
+                    print('Merde')
+                a_tracks.append(track)
 
         if verbose is True:
             print('\nFound {0} tracks'.format(len(tracks)))
 
-        if self.linkage.ambiguous_tracks is False:
+        if self.linkage.ambiguous_tracks == False:
             self.tracks = tracks
             return tracks
         else:
+            self.tracks = tracks + a_tracks
             return tracks, a_tracks
 
     def filter(self, overwrite=True, parameters=None):
@@ -1201,7 +1200,7 @@ class Experiment(object):
 
         return barrier_datasets
 
-    def correct_rotation(source, destination, bins=10):  # NOT TRANSFERED TO OOP
+    def correct_rotation(self, source, destination, bins=10):  # NOT TRANSFERED TO OOP
         """
         Corrects rotation on images based on the barriers
         Assumes that rotation is constant over time.
@@ -1317,7 +1316,7 @@ def subpixel_resolution(spots, images_source):
     r = 4
     spr = [[] for s in spots]
     for f in sorted(os.listdir(images_source)):
-        image = io.imread(d+'/'+f)
+        image = io.imread(images_source+'/'+f)
         xlims = (0, image.shape[1])
         ylims = (0, image.shape[0])
         for s in frames[i]:
@@ -1533,15 +1532,18 @@ def import_isbi_data(xml):
 if __name__ == '__main__':
 
     data1 = '/home/corentin/H2A ATTO532 data/'
-    data2 = '/home/corentin/ISBI Challenge/VESICLE/VESICLE snr 7 density mid/*.tif'
-    f = '/home/corentin/Dropbox/Code/CATS/H2A ATTO532 data.exp'
+    data2 = '/home/corentin/ISBI Challenge/Stable particles/SNR7'
+    f = '/home/corentin/Dropbox/Code/CATS/Stuff/vesicles snr 7 mid.exp'
 
-    E = Experiment(data2)
+    E = Experiment('sp_snr7.exp')
+    E.linkage = DEFAULTS.linkage.copy()
+    E.linkage.ambiguous_tracks = True
+    # E.detection = {'threshold': 0.05, 'blur': 0.5}
+    # E.find_spots()
+    E.link_spots()
+    # E.save('sp_snr7.exp')
     # E.datasets[0].test_detection_conditions(0.5, 0.03, 10, 'test.tif')
     # E.detection = {'blur': 0.5, 'threshold': 0.03}
     # E.find_spots()
-    E.load('/home/corentin/Dropbox/Code/CATS/vesicles snr 7 mid.exp')
-    E.filtration = DEFAULTS.filtration.copy()
-    E.filtration.min_length = 4
     E.filter()
-    E.datasets[0].as_isbi_xml()
+    E.datasets[0].as_isbi_xml('/home/corentin/ISBI Challenge/CATS results/sp_snr7_tracks.xml', snr="7", density="low med high 100.0", scenario="NO_SCENARIO")
