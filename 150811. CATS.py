@@ -582,6 +582,36 @@ class Dataset(Parameters):
         self.spots = np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, int, int)}).view(np.recarray)
         return spots
 
+    def subpixel_resolution(self):
+        """
+        Refine the spots detected using detect_spots() to subpixel resolution
+        by fitting a Gaussian on them
+        """
+
+        # Reorganize spots by frame
+        frames = [[] for f in range(self.images.length())]
+        for i, spot in enumerate(self.spots):
+            frames[spot['t']].append(i)
+
+        # Fit a 2D gaussian on every single spot
+        for f, img in enumerate(self.images.read()):
+            for spot in frames[f]:
+                s = self.spots[spot]
+                r = s['s']+1*np.sqrt(2)
+                xlims, ylims = self.images.dimensions()
+                y = (max(0, int(floor(s['y'] - r))), int(ceil(s['y'] + r))+1)
+                x = (max(0, int(floor(s['x'] - r))), int(ceil(s['x'] + r))+1)
+                data = img[y[0]:y[1], x[0]:x[1]]
+                coords = np.meshgrid(np.arange(data.shape[0]),
+                                     np.arange(data.shape[1]))
+                try:
+                    fit, cov = curve_fit(gaussian_2d, coords, data.ravel(), p0=(s['i'], s['x']-x[0], s['y']-y[0], s['s']))
+                    self.spots[spot]['x'] = x[0]+fit[1]
+                    self.spots[spot]['y'] = y[0]+fit[2]
+                    self.spots[spot]['s'] = fit[3]
+                except:
+                    pass
+
     def link_spots(self, verbose=True):
         """
         Link spots together in time
@@ -1300,49 +1330,6 @@ class Experiment(object):
         plt.show()
 
 
-# Refine the spots to subpixel resolution
-def subpixel_resolution(spots, images_source):
-    # Reorganize spots by frame
-    n_frames = np.array(spots, dtype='i8')[:, 3].max() + 1
-    frames = [[] for f in range(n_frames)]
-    i = 0
-    for spot in spots:
-        frames[spot[3]].append(list(spot)+[i])
-        i += 1
-
-    # Fit a 2D gaussian on every single spot
-    i = 0
-    # r = np.sqrt(2)
-    r = 4
-    spr = [[] for s in spots]
-    for f in sorted(os.listdir(images_source)):
-        image = io.imread(images_source+'/'+f)
-        xlims = (0, image.shape[1])
-        ylims = (0, image.shape[0])
-        for s in frames[i]:
-            y = [max(int(floor(s[1] - r*s[2])), ylims[0]),
-                 min(int(ceil(s[1] + r*s[2]))+1, ylims[1])]
-            x = [max(int(floor(s[0] - r*s[2])), xlims[0]),
-                 min(int(ceil(s[0] + r*s[2]))+1, xlims[1])]
-            data = image[y[0]:y[1], x[0]:x[1]]
-            coords = np.meshgrid(np.arange(data.shape[0]), np.arange(data.shape[1]))
-            try:
-                fit, cov = curve_fit(gaussian_2d, coords, data.ravel(), p0=(image[s[1]][s[0]], s[0]-x[0], s[1]-y[0], s[2]))
-                print(s[:2], [fit[1]+x[0], y[0]+fit[2]], np.sqrt(np.diag(cov)))
-                plt.imshow(data, cmap=plt.cm.gray, origin='bottom')
-                plt.plot(fit[1], fit[2], 'ro')
-                plt.plot(s[0]-x[0], s[1]-y[0], 'go')
-                plt.show()
-                s = [x[0]+fit[1], y[0]+fit[2], fit[3], i, s[4]]
-            except:
-                pass
-            spr[s[4]] = s
-            # print(spr[s[4]])
-        i += 1
-
-    return spr
-
-
 def gaussian_2d(coords, A, x0, y0, s):
     x, y = coords
     return (A*np.exp(((x-x0)**2+(y-y0)**2)/(-2*s**2))).ravel()
@@ -1538,6 +1525,7 @@ if __name__ == '__main__':
     E = Experiment('sp_snr7.exp')
     E.linkage = DEFAULTS.linkage.copy()
     E.linkage.ambiguous_tracks = True
+    # E.datasets[0].subpixel_resolution()
     # E.detection = {'threshold': 0.05, 'blur': 0.5}
     # E.find_spots()
     E.link_spots()
