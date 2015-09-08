@@ -571,7 +571,7 @@ class Dataset(Parameters):
         for blobs in pool.imap(find_blobs, iter((i, self.detection.blur, self.detection.threshold, j) for j, i in enumerate(self.images.read()))):
             if verbose is True:
                 print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4], time() - t), end='')
-            stdout.flush()
+                stdout.flush()
             spots.extend(blobs)
         pool.close()
         pool.join()
@@ -1111,6 +1111,14 @@ class Experiment(object):
             tracks.extend(ds.get_tracks(properties))
         return tracks
 
+    def subpixel_resolution(self, datasets=None):
+        """
+        This is some pretty bad docstring.
+        """
+        datasets = range(len(self.datasets)) if datasets is None else datasets
+        for ds in datasets:
+            self.datasets[ds].subpixel_resolution()
+
     # Transformation of images into datasets
     def find_barriers(self, datasets=None, overwrite=True):
         """
@@ -1210,6 +1218,8 @@ class Experiment(object):
             for s in sets:
                 score = sum([n[1] for n in s])
                 set_scores.append((len(s), -score))
+            if 'barriers' not in self:
+                self.barriers = {}
             self.barriers.positions = sorted([sorted(n[0]) for n in sets[set_scores.index(sorted(set_scores, reverse=True)[0])]])
 
             # Transform barrier sets into datasets
@@ -1496,42 +1506,3 @@ def transitive_closure(G, order=None, adj_matrix=False):
         for i, j in (np.array(np.where(M == 1)).T):
             GT.add_edge(order[i], order[j])
         return GT
-
-
-def import_isbi_data(xml):
-    tracks, spots, i = list(), list(), 0
-    X = ET.parse(xml)
-    R = X.getroot()
-    for particle in R[0]:
-        t = list()
-        for spot in particle:
-            spots.append((spot.attrib['x'], spot.attrib['y'], spot.attrib['t']))
-            t.append(i)
-            i += 1
-        tracks.append(t)
-    D = Dataset(source=os.path.split(xml)[0])
-    D.spots = np.array(spots, dtype={'names': ('x', 'y', 't'), 'formats': (float, float, int)}).view(np.recarray)
-    D.tracks = tracks
-
-    return D
-
-# Output
-if __name__ == '__main__':
-
-    data1 = '/home/corentin/H2A ATTO532 data/'
-    data2 = '/home/corentin/ISBI Challenge/Stable particles/SNR7'
-    f = '/home/corentin/Dropbox/Code/CATS/Stuff/vesicles snr 7 mid.exp'
-
-    E = Experiment('sp_snr7.exp')
-    E.linkage = DEFAULTS.linkage.copy()
-    E.linkage.ambiguous_tracks = True
-    # E.datasets[0].subpixel_resolution()
-    # E.detection = {'threshold': 0.05, 'blur': 0.5}
-    # E.find_spots()
-    E.link_spots()
-    # E.save('sp_snr7.exp')
-    # E.datasets[0].test_detection_conditions(0.5, 0.03, 10, 'test.tif')
-    # E.detection = {'blur': 0.5, 'threshold': 0.03}
-    # E.find_spots()
-    E.filter()
-    E.datasets[0].as_isbi_xml('/home/corentin/ISBI Challenge/CATS results/sp_snr7_tracks.xml', snr="7", density="low med high 100.0", scenario="NO_SCENARIO")
