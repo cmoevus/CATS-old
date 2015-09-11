@@ -8,7 +8,7 @@ from __future__ import print_function
 from multiprocessing import cpu_count
 from AttributeDict import AttributeDict
 
-DEFAULTS = AttributeDict({
+Dataset = AttributeDict({
         'xlims': (0, None),
         'ylims': (0, None),
         'tlims': (0, None),
