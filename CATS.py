@@ -7,6 +7,8 @@ from __future__ import print_function
 # numpy's record arrays do not work with future unicode_literals
 # from __future__ import unicode_literals
 
+from AttributeDict import AttributeDict
+import Defaults
 import os
 import numpy as np
 from numpy import ma
@@ -25,7 +27,7 @@ from math import floor, ceil, atan, degrees
 from glob import glob
 import javabridge
 import bioformats
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from sys import stdout
 import pickle
 import tarfile
@@ -33,188 +35,62 @@ from StringIO import StringIO
 import xml.etree.ElementTree as ET
 
 
-class Parameters(object):
+class Parameters(AttributeDict):
     """
-    Parameters dictionary-object. Allows to add getters and setters on
-    parameters, as well as to access them through Parameters.property
-    or Parameters['property'], which means it can still be passed as
-    **kwargs
+    List of parameters accessible via AttributeDict properties that also
+    support default values.
 
-    Parameters starting with '_' will be hidden. These can be
-    Parameters' parameters or voluntarly hidden parameters. They have
-    to be explicitely called by the user. They will not be inherited
-    or listed by update() or items()/keys()/values()/etc.
-    _position: (list) position within the 'DEFAULTS' parameters
-    _use_defaults: (bool) use the DEFAULTS parameters when a value is
-    not found in the current Parameters object
+    Parameters starting with '_' will be hidden. These can be Parameters'
+    parameters or voluntarly hidden parameters. They have to be explicitely
+    called by the user. They will not be listed by update() or
+    items()/keys()/values()/etc.
 
-    In order to keep keywords logical between the dictionary view and
-    the attribute view of the object, when writing getters and setters,
-    use self.__dict__['params'][k] = v, for example, rather than
-    object.__setattr__(self, 'k', v). Indeed, the latter case will lead
-    to infinite recursion. Using a different 'transition' name will
-    lead to improper listing when iterating over the values, for example
-    in **kwargs.
-
-    Arguments:
-    ---------
-    Any dictionary, iterable object that can be accessed by iteritems()
-    or as a pair of (keyword, value). Acceptable arguments are:
-    - Dictionaries
-    - Objects with a iteritems() function
-    - Tuples/Lists of (keywork, value)
-    - (keyword, value) as a tuple/list
-    - keyworded arguments
+    Parameters:
+    -----------
+    _position: (list) position within the _defaults parameters dict from where
+                to fetch values.
+    _defaults: (dict/AttributeDict) the object to fetch values from if they do
+                not exist in this object.
     """
-
-    fetched_functs = ['keys', 'values', 'items', 'iterkeys', 'iteritems',
-                      'itervalues', '__iter__']
 
     def __init__(self, *args, **kwargs):
         if '_position' in kwargs:
             self._position = kwargs['_position']
         else:
             self._position = []
-        self.__dict__['params'] = dict()
-        self.update(*args, **kwargs)
-        if hasattr(self, '_use_defaults') is False:
-            self._use_defaults = True
+        if '_defaults' not in kwargs:
+            self._defaults = AttributeDict()
+        AttributeDict.__init__(self, *args, **kwargs)
 
     def __getattr__(self, attr):
-        """
-        fetched_functs allows to handle selected basic dictionary functions
-        """
         error = '{0} not found'.format(attr)
-        if attr in self.fetched_functs:
-            return getattr(self.__dict__['params'], attr)
-        else:
+        try:
+            return AttributeDict.__getattr__(self, attr)
+        except AttributeError:
             try:
-                if attr[0] != '_':
-                    return self.__dict__['params'][attr]
+                if attr[0] == '_':
+                    raise KeyError
+                d = self._defaults
+                for p in self._position:
+                    d = d[p]
+                if attr in d:
+                    # Avoid modifying the Defaults dict. Kind of a lame
+                    # hack...
+                    if isinstance(d[attr], AttributeDict):
+                        return d[attr].copy()
+                    else:
+                        return d[attr]
                 else:
                     raise KeyError
             except KeyError:
-                if self._use_defaults is False:
-                    raise AttributeError(error)
-                else:
-                    try:
-                        d = DEFAULTS
-                        for p in self._position:
-                            d = d[p]
-                        if attr in d:
-                            # Avoid modifying the DEFAULTS dict. Kind of a lame
-                            # hack...
-                            if isinstance(d[attr], Parameters):
-                                return d[attr].copy()
-                            else:
-                                return d[attr]
-                        else:
-                            raise KeyError
-                    except KeyError:
-                        raise AttributeError(error)
+                raise AttributeError(error)
 
     def __setattr__(self, attr, value):
-        # Prevent from blocking the read-only attributes from __dict__
-        if attr in self.fetched_functs:
-            e = 'object attribute {0} is read-only'.format(attr)
-            raise AttributeError(e)
-
-        # Set the value of the proper attribute
+        # Transform all subdicts into same class, with position
+        if type(value) is dict:
+            AttributeDict.__setattr__(self, attr, type(self)(_position=self._position + [attr], _defaults = self._defaults, **value))
         else:
-            # Transform all subdicts into Parameters dict
-            if type(value) is dict:
-                value = Parameters(_position=self._position + [attr], **value)
-
-            # Put parameters in the right dict
-            if attr[0] == '_' or attr in dir(self):
-                object.__setattr__(self, attr, value)
-            else:
-                self.__dict__['params'][attr] = value
-
-    def __repr__(self):
-        return self.__dict__['params'].__repr__()
-
-    def __str__(self):
-        return self.__dict__['params'].__str__()
-
-    def __setitem__(self, key, value):
-        self.__setattr__(key, value)
-
-    def __getitem__(self, key):
-        try:
-            return self.__getattribute__(key)
-        except AttributeError:
-            return self.__getattr__(key)
-
-    def __contains__(self, key):
-        if key[0] == '_':
-            return key in self.__dict__
-        else:
-            return key in self.__dict__['params']
-
-    def __getstate__(self):
-        return self.__dict__
-
-    def __setstate__(self, s):
-        self.__init__([i for i in s.items() if i[0] != 'params'], s['params'])
-
-    def update(self, *args, **kwargs):
-        """
-        Update the parameters with the given list/object
-        """
-        # Import dicts and lists and pairs
-        for d in args:
-            if 'iteritems' in dir(d) or isinstance(d, Parameters):
-                d = d.iteritems()
-            elif '__iter__' not in dir(d[0]):
-                d = (d, )
-            for k, v in d:
-                setattr(self, k, v)
-        # Import keywords
-        for k, v in kwargs.iteritems():
-            setattr(self, k, v)
-
-    def copy(self):
-        return Parameters(dict(self).copy())
-
-DEFAULTS = Parameters({
-        'xlims': (0, None),
-        'ylims': (0, None),
-        'tlims': (0, None),
-        'channel': 0,
-        'max_processes': cpu_count(),
-        'linkage': {
-            'max_disp': (2, 2),  # Maximum displacement, in pixels
-            'max_blink': 25,  # Maximum blinking, in frames
-            'ambiguous_tracks': False,  # Should we keep and try to solve
-                                        # ambiguous tracks?
-            },
-        'filtration': {
-            'min_length': 3,  # Minimum number of frames to keep a track
-            'max_length': None,  # The maximum number of frames to keep a track
-            'mean_blink': 5,  # The mean number of frames between two spots to
-                              # keep a track
-            },
-        'barriers': {
-            # Values for Charlie Brown DT: dbp = 12.5um and dbb = 37um
-            'dbp': 47,  # Distance between the barriers and the
-                        # pedestals in pixels
-            'dbb': 139,  # Distance between two sets of barriers, in pixels
-            'axis': 'y',  # The axis of the image with which the barriers are
-                          # parallel. Either 'x' or 'y'
-            'orientation': 'bp'  # The order of appearance of barriers and
-                                 # pedestals, from the left. bp: barrier,
-                                 # then pedestals. pb: pedestals, then barriers
-            },
-        'barrier_detection': {
-            'approx': 20,  # Approximate
-            'blur': 2,  # Blurring for diminishing the effect of noise.
-            'guess': True,  # Guess the position of barriers when there
-                            # expected but not present
-            'tlims': None  # The frames to use for finding the barriers.
-                           # If None, uses the main tlims
-            },
-        }, _use_defaults=False)
+            AttributeDict.__setattr__(self, attr, value)
 
 
 class Images(object):
@@ -239,33 +115,13 @@ class Images(object):
     Methods:
     -------
     - read: generator function that will return images one by one
+    - get: returns the image at the given frame
+
+    Properties:
+    ---------------
     - dimensions: size of the image in (x, y), in pixels
     - length: number of frames
     """
-
-    @property
-    def xlims(self):
-        return self.lims[0]
-
-    @xlims.setter
-    def xlims(self, lims):
-        self.lims[0] = slice(*lims)
-
-    @property
-    def ylims(self):
-        return self.lims[1]
-
-    @ylims.setter
-    def ylims(self, lims):
-        self.lims[1] = slice(*lims)
-
-    @property
-    def tlims(self):
-        return self.lims[2]
-
-    @tlims.setter
-    def tlims(self, lims):
-        self.lims[2] = slice(lims[0], self.length(True)) if lims[1] is None else slice(*lims)
 
     def __init__(self, source, channel=0, xlims=(0, None), ylims=(0, None), tlims=(0, None)):
         # A file was given
@@ -282,14 +138,103 @@ class Images(object):
                 wildcards = '*'
             else:
                 source, wildcards = os.path.split(source)
-                if os.path.isdir(source) is False:
-                    raise ValueError('This path does not exists')
+                # if os.path.isdir(source) is False:
+                #     raise ValueError('This path does not exists')
             self.is_file = False
             self.source = source + wildcards if source[-1] == '/' else source + '/' + wildcards
 
         # Set lims. Property setters will transform into proper slices
         self.lims = [None, None, None]
         self.xlims, self.ylims, self.tlims = xlims, ylims, tlims
+
+    @property
+    def xlims(self):
+        return self.lims[0]
+
+    @xlims.setter
+    def xlims(self, lims):
+        self.lims[0] = slice(*lims)
+        self.get_dimensions()
+
+    @property
+    def ylims(self):
+        return self.lims[1]
+
+    @ylims.setter
+    def ylims(self, lims):
+        self.lims[1] = slice(*lims)
+        self.get_dimensions()
+
+    @property
+    def tlims(self):
+        return self.lims[2]
+
+    @tlims.setter
+    def tlims(self, lims):
+        self.lims[2] = slice(lims[0], self.length(True)) if lims[1] is None else slice(*lims)
+        self.get_length()
+
+    @property
+    def dimensions(self):
+        """Returns the shape of the images in the format (x, y), in pixels."""
+        if self._dimensions is None:
+            self.get_dimensions()
+        return self._dimensions
+
+    @dimensions.setter
+    def dimensions(self, value):
+        return AttributeError("The 'dimensions' attribute is read-only")
+
+    @property
+    def length(self):
+        """Return the number of frames in the experiment"""
+        if self._length is None:
+            self.get_length()
+        return self._length
+
+    @length.setter
+    def length(self, value):
+        return AttributeError("The 'length' attribute is read-only")
+
+    def get_dimensions(self, ignore_lims=False):
+        """
+        Return the dimension of the images or region of intereset (ROI) in pixels, as (x, y).
+
+        Arguments:
+        ---------------
+        - ignore_lims: return the dimensions of the source image if True, of the ROI if False
+        """
+        if self.is_file is False:
+            shape = io.imread(glob(self.source)[0]).shape[::-1]
+        else:
+            shape = self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY()
+        if self.xlims.stop is None:
+            x = shape[0] - self.xlims.start
+        else:
+            x = min(self.xlims.stop - self.xlims.start,
+                    shape[0] - self.xlims.start)
+        if self.ylims.stop is None:
+            y = shape[1] - self.ylims.start
+        else:
+            y = min(self.ylims.stop - self.ylims.start,
+                    shape[1] - self.ylims.start)
+            self._dimensions = (x, y)
+            return x, y if ignore_lims is False else shape
+
+    def get_length(self, ignore_lims=False):
+        """
+        Return the length of the image sequence, in frames.
+
+        Arguments:
+        ---------------
+        - ignore_lims: return the length of the source sequence if    True, of the selected sequence if False
+        """
+        if self.is_file is False:
+            l = len(glob(self.source))
+        else:
+            l = self.reader.rdr.getSizeT()
+        self._length = min(self.tlims.stop - self.tlims.start,  l - self.tlims.start)
+        return self._length if ignore_lims is False else l
 
     def read(self):
         """
@@ -322,49 +267,6 @@ class Images(object):
             return self.reader.read(t=frame,
                                     c=self.channel,
                                     rescale=False)[self.ylims, self.xlims]
-
-    def dimensions(self, ignore_lims=False):
-        """
-        Returns the shape of the images in the format (x, y), in pixels
-        If ignore_lims is True: return the dimensions of the actual
-        images, not of the ROI
-        """
-        if self.is_file is False:
-            shape = io.imread(glob(self.source)[0]).shape[::-1]
-        else:
-            shape = self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY()
-
-        if ignore_lims is True:
-            return shape
-        else:
-            if self.xlims.stop is None:
-                x = shape[0] - self.xlims.start
-            else:
-                x = min(self.xlims.stop - self.xlims.start,
-                        shape[0] - self.xlims.start)
-            if self.ylims.stop is None:
-                y = shape[1] - self.ylims.start
-            else:
-                y = min(self.ylims.stop - self.ylims.start,
-                        shape[1] - self.ylims.start)
-            return x, y
-
-    def length(self, ignore_lims=False):
-        """
-        Return the number of frames in the experiment
-        If ignore_lims is True: return the length of the actual set,
-        not of the ROI
-        """
-        if self.is_file is False:
-            l = len(glob(self.source))
-        else:
-            l = self.reader.rdr.getSizeT()
-
-        if ignore_lims is True:
-            return l
-        else:
-            return min(self.tlims.stop - self.tlims.start,
-                       l - self.tlims.start)
 
 
 class Dataset(Parameters):
@@ -409,6 +311,7 @@ class Dataset(Parameters):
 
     def __init__(self, *args, **kwargs):
         super(Dataset, self).__init__()
+        self._defaults = Defaults.Dataset
         self.images = None
         self.spots = None
         self.tracks = None
@@ -419,50 +322,53 @@ class Dataset(Parameters):
         self.update(*args, **kwargs)
 
     def __getstate__(self):
-        d = dict([i for i in self.__dict__.iteritems() if i[0] != 'params'])
-        d['params'] = dict([i for i in self.__dict__['params'].iteritems()
+        d = dict([i for i in self.__dict__.iteritems() if i[0] != '_attribs'])
+        d['_attribs'] = dict([i for i in self.__dict__['_attribs'].iteritems()
                             if i[0] != 'images'])
         return d
 
     @property
     def source(self):
-        return self.__dict__['params']['source']
+        return self.__dict__['_attribs']['source']
 
     @source.setter
     def source(self, f):
-        self.images = Images(f, self.channel, self.xlims,
-                             self.ylims, self.tlims)
-        self.__dict__['params']['source'] = f
+        try:
+            self.images = Images(f, self.channel, self.xlims,
+                                 self.ylims, self.tlims)
+        except ValueError:
+            pass
+        self.__dict__['_attribs']['source'] = f
 
     @property
     def xlims(self):
-        return self.__dict__['params']['xlims'] if 'xlims' in self else DEFAULTS['xlims']
+        return self.__dict__['_attribs']['xlims'] if 'xlims' in self else self._defaults['xlims']
 
     @xlims.setter
     def xlims(self, v):
         if self.images is not None:
             setattr(self.images, 'xlims', v)
-        self.__dict__['params']['xlims'] = v
+        self.__dict__['_attribs']['xlims'] = v
 
     @property
     def ylims(self):
-        return self.__dict__['params']['ylims'] if 'ylims' in self else DEFAULTS['ylims']
+        return self.__dict__['_attribs']['ylims'] if 'ylims' in self else self._defaults['ylims']
 
     @ylims.setter
     def ylims(self, v):
         if self.images is not None:
             setattr(self.images, 'ylims', v)
-        self.__dict__['params']['ylims'] = v
+        self.__dict__['_attribs']['ylims'] = v
 
     @property
     def tlims(self):
-        return self.__dict__['params']['tlims'] if 'tlims' in self else DEFAULTS['tlims']
+        return self.__dict__['_attribs']['tlims'] if 'tlims' in self else self._defaults['tlims']
 
     @tlims.setter
     def tlims(self, v):
         if self.images is not None:
             setattr(self.images, 'tlims', v)
-        self.__dict__['params']['tlims'] = v
+        self.__dict__['_attribs']['tlims'] = v
 
     def save(self, f=None):
         """
@@ -501,7 +407,7 @@ class Dataset(Parameters):
             self.file = f
         else:
             D = pickle.loads(f)
-        self.update([i for i in D.__dict__.iteritems() if i[0] != 'params'], D)
+        self.update([i for i in D.__dict__.iteritems() if i[0] != '_attribs'], D)
 
     def test_detection_conditions(self, blur, threshold, frame, output=None, save=True):
         """
@@ -728,7 +634,15 @@ class Dataset(Parameters):
         for track in self.tracks:
             if parameters['min_length'] <= len(track) <= parameters['max_length']:
                 if np.abs(np.diff(sorted([self.spots[s]['t'] for s in track]))).mean() <= parameters['mean_blink']:
-                    n_tracks.append(track)
+                    keep = True
+                    x, y = self.images.dimensions()
+                    for spot in track:
+                        s_x, s_y = self.spots[spot]['x'], self.spots[spot]['y']
+                        if s_x > x or s_x < 0 or s_y > y or s_y < 0:
+                            keep = False
+                            break
+                    if keep == True:
+                        n_tracks.append(track)
 
         if overwrite is True:
             self.filtration = parameters
@@ -832,6 +746,7 @@ def find_blobs(*args):
 
 
 class Experiment(object):
+
     """
     An experiment can be:
         1) A set of data collected in some specific conditions
@@ -849,7 +764,6 @@ class Experiment(object):
     - Any combination of keywords/list of parameters/dicts, just like
     for Datasets
     """
-
     def __init__(self, *args, **kwargs):
         self.datasets = []
         self.parameters = Parameters()
@@ -1281,7 +1195,8 @@ class Experiment(object):
         lims = (0, max([s for t in self.get_tracks('x') for s in t]))
 
         # Create a dic of position -> lengths of tracks
-        bins = np.arange(0, lims[1], binsize)
+        bins = np.arange(0, int(ceil(lims[1])), binsize)
+        print(bins)
         y = dict()
         for i in range(0, len(bins)):
             y[i] = list()
