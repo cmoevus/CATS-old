@@ -30,13 +30,24 @@ class Images(object):
     """
 
     def __init__(self, source):
-        """ Load either BioFormats or Tiff list """
+        """ Load either BioFormats or Tiff list."""
+        self.source = source
+        self._dims = None
+        self._len = None
+
+    @property
+    def source(self):
+        return self._source
+
+    @source.setter
+    def source(self, source):
+        """Select between a BioFormats reader or a image list reader."""
         # A file was given
         if os.path.isfile(source) is True:
             self.is_file = True
-            self.source = source
             javabridge.start_vm(class_path=bioformats.JARS)
-            self.reader = bioformats.ImageReader(self.source)
+            self.reader = bioformats.ImageReader(source)
+            self._source = source
 
         # A path or dir was given
         else:
@@ -47,17 +58,13 @@ class Images(object):
                 if os.path.isdir(source) is False:
                     raise ValueError('This path does not exists')
             self.is_file = False
-            self.source = source + wildcards if source[-1] == '/' else source + '/' + wildcards
-
-        # Initiate properties
-        self._dims = None
-        self._len = None
+            self._source = source + wildcards if source[-1] == '/' else source + '/' + wildcards
 
     @property
     def dimensions(self):
         """Return the shape of the images in the format (x, y), in pixels."""
-        if  self._dims is None:
-            self._dims = io.imread(glob(self.source)[0]).shape[::-1] if self.is_file == False else  self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY()
+        if self._dims is None:
+            self._dims = io.imread(glob(self.source)[0]).shape[::-1] if self.is_file == False else  (self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY())
         return self._dims
 
     @dimensions.setter
@@ -68,7 +75,7 @@ class Images(object):
     @property
     def length(self):
         """Return the number of frames in the experiment"""
-        if  self._len is None:
+        if self._len is None:
             self._len =  len(glob(self.source)) if self.is_file == False else  self.reader.rdr.getSizeT()
         return self._len
 
@@ -140,6 +147,14 @@ class ROI(Images):
         return s
 
     @property
+    def source(self):
+        return self.images.source
+
+    @source.setter
+    def source(self, source):
+        raise AttributeError("The source of a ROI is read-only. Directly change the source from the source Images object.")
+
+    @property
     def dimensions(self):
         return self.x.stop - self.x.start, self.y.stop - self.y.start
 
@@ -180,4 +195,5 @@ class ROI(Images):
                 yield self.images.reader.read(t=t, c=self.channel, rescale=False)[self.y, self.x]
 
     def get(self, frame):
-        return self.images.get(frame + self.t.start)[self.y, self.x, self.channel]
+        i = self.images.get(frame + self.t.start)[self.y, self.x]
+        return i if i.ndim == 2 else i[:, :, self.channel]
