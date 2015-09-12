@@ -65,7 +65,7 @@ class Images(object):
     def dimensions(self):
         """Return the shape of the images in the format (x, y), in pixels."""
         if self._dims is None:
-            self._dims = io.imread(glob(self.source)[0]).shape[::-1] if self.is_file == False else  (self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY())
+            self._dims = io.imread(glob(self.source)[0]).shape[::-1] if self.is_file == False else (self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY())
         return self._dims
 
     @dimensions.setter
@@ -77,7 +77,7 @@ class Images(object):
     def length(self):
         """Return the number of frames in the experiment"""
         if self._len is None:
-            self._len =  len(glob(self.source)) if self.is_file == False else  self.reader.rdr.getSizeT()
+            self._len = len(glob(self.source)) if self.is_file == False else self.reader.rdr.getSizeT()
         return self._len
 
     @length.setter
@@ -160,9 +160,9 @@ class ROI(Images):
     def __init__(self, images, x=None, y=None, t=None, c=0):
             """ Build the image object and set the limits"""
             self.images = images if isinstance(images, Images) is True else Images(images)
-            self.x, self.y, self.t , self.channel = x, y, t, c
+            self.x, self.y, self.t, self.channel = x, y, t, c
 
-    def _slicify(self, s, fallback = slice(None)):
+    def _slicify(self, s, fallback=slice(None)):
         """
         Transform the input into a slice.
 
