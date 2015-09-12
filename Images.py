@@ -105,6 +105,14 @@ class Images(object):
         else:
             return self.reader.read(t=frame, rescale=False)
 
+    def __repr__(self):
+        """Return the path to the images."""
+        return self.source
+
+    def __str__(self):
+        """Return the path to the images."""
+        return self.source
+
 
 class ROI(Images):
     """
@@ -152,7 +160,7 @@ class ROI(Images):
 
     @source.setter
     def source(self, source):
-        raise AttributeError("The source of a ROI is read-only. Directly change the source from the source Images object.")
+        raise AttributeError("The source of a ROI is read-only. Directly change the source from the original Images object.")
 
     @property
     def dimensions(self):
@@ -197,3 +205,15 @@ class ROI(Images):
     def get(self, frame):
         i = self.images.get(frame + self.t.start)[self.y, self.x]
         return i if i.ndim == 2 else i[:, :, self.channel]
+
+    def __repr__(self):
+        """Return the path to the images with the limits"""
+        if self.images.is_file == False:
+            r = "Area between x: {0}, y: {1}, t: {2} in {3} ".format(self.x, self.y, self.t, self.source)
+        else:
+            r = "Area between x: {0}, y: {1}, t: {2}, channel {3} in {4} ".format(self.x, self.y, self.t, self.channel, self.source)
+        return r
+
+    def __str__(self):
+        """Return the path to the images with the limts"""
+        return self.__repr__()
