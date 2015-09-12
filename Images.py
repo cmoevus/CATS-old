@@ -30,7 +30,7 @@ class Images(object):
     """
 
     def __init__(self, source):
-        """ Load either BioFormats or Tiff list."""
+        """Load either BioFormats or Tiff list."""
         self.source = source
         self._dims = None
         self._len = None
@@ -75,7 +75,7 @@ class Images(object):
 
     @property
     def length(self):
-        """Return the number of frames in the experiment"""
+        """Return the number of frames in the experiment."""
         if self._len is None:
             self._len = len(glob(self.source)) if self.is_file == False else self.reader.rdr.getSizeT()
         return self._len
@@ -98,7 +98,7 @@ class Images(object):
 
     def get(self, frame):
         """
-        Return a numpy array representing the image at the given frame
+        Return a numpy array representing the image at the given frame.
 
         Keyword argument:
             frame: the frame to return
@@ -119,7 +119,7 @@ class Images(object):
         return self.source
 
     def _save_attributes(self):
-        """Put the attributes from the Images into the object, in view of pickling and unpickling without the source"""
+        """Put the attributes from the Images into the object, in view of pickling and unpickling without the source."""
         self.dimensions
         self.length
 
@@ -143,6 +143,7 @@ class Images(object):
 
 
 class ROI(Images):
+
     """
     Select specific regions in x, y, t from a given Images object.
 
@@ -158,7 +159,7 @@ class ROI(Images):
     """
 
     def __init__(self, images, x=None, y=None, t=None, c=0):
-            """ Build the image object and set the limits"""
+            """Build the image object and set the limits."""
             self.images = images if isinstance(images, Images) is True else Images(images)
             self.x, self.y, self.t, self.channel = x, y, t, c
 
@@ -184,45 +185,56 @@ class ROI(Images):
 
     @property
     def source(self):
+        """Return the path to images."""
         return self.images.source
 
     @source.setter
     def source(self, source):
+        """Return an error: source of an ROI is read-only."""
         raise AttributeError("The source of a ROI is read-only. Directly change the source from the original Images object.")
 
     @property
     def dimensions(self):
+        """Return the dimensions of the ROI, as (x, y)."""
         return self.x.stop - self.x.start, self.y.stop - self.y.start
 
     @property
     def length(self):
+        """Return the length of the ROI, in frames."""
         return self.t.stop - self.t.start
 
     @property
     def x(self):
+        """Return the limits of the ROI in x."""
         return self._x
 
     @x.setter
     def x(self, value):
+        """Set the limits of the ROI in x."""
         self._x = self._slicify(value, self.images.dimensions[0])
 
     @property
     def y(self):
+        """Return the limits of the ROI in y."""
         return self._y
 
     @y.setter
     def y(self, value):
+        """Set the limits of the ROI in y."""
         self._y = self._slicify(value, self.images.dimensions[1])
 
     @property
     def t(self):
+        """Return the limits of the ROI in time."""
         return self._t
 
     @t.setter
     def t(self, value):
+        """Set the limits of the ROI in time."""
         self._t = self._slicify(value, self.images.length)
 
     def read(self):
+        """Return a generator of ndarrays of every images in the source."""
         if self.images.is_file is False:
             for f in sorted(glob(self.images.source))[self.t]:
                 yield io.imread(f)[self.y, self.x]
@@ -231,11 +243,12 @@ class ROI(Images):
                 yield self.images.reader.read(t=t, c=self.channel, rescale=False)[self.y, self.x]
 
     def get(self, frame):
+        """Return the given frame."""
         i = self.images.get(frame + self.t.start)[self.y, self.x]
         return i if i.ndim == 2 else i[:, :, self.channel]
 
     def __repr__(self):
-        """Return the path to the images with the limits"""
+        """Return the path to the images with the limits."""
         if self.images.is_file == False:
             r = {'source': self.source, 'x': self.x, 'y': self.y, 't': self.t}.__repr__()
         else:
@@ -243,5 +256,5 @@ class ROI(Images):
         return r
 
     def __str__(self):
-        """Return the path to the images with the limts"""
+        """Return the path to the images."""
         return self.source
