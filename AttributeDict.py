@@ -9,6 +9,7 @@ from copy import deepcopy
 
 
 class AttributeDict(object):
+
     """
     Dictionary-like object that allow to access items as an object's attributes.
 

@@ -118,11 +118,15 @@ class Images(object):
         """Return the path to the images."""
         return self.source
 
+    def _save_attributes(self):
+        """Put the attributes from the Images into the object, in view of pickling and unpickling without the source"""
+        self.dimensions
+        self.length
+
     def __getstate__(self):
         """Pickle the whole object, except the reader."""
         # Put info in memory
-        self.dimensions
-        self.length
+        self._save_attributes()
         return dict(((k, v) for k, v in self.__dict__.items() if k != 'reader'))
 
     def __setstate__(self, state):

@@ -48,11 +48,13 @@ class Parameters(AttributeDict):
     """
 
     def __init__(self, *args, **kwargs):
+        """Call parent class. Add support for defaults."""
         if '_defaults' not in kwargs:
             self._defaults = AttributeDict()
         AttributeDict.__init__(self, *args, **kwargs)
 
     def __getattr__(self, attr):
+        """Call parent class. Add support for defaults."""
         error = '{0} not found'.format(attr)
         try:
             return AttributeDict.__getattr__(self, attr)
@@ -72,129 +74,96 @@ class Parameters(AttributeDict):
                 raise AttributeError(error)
 
     def __setattr__(self, attr, value):
-        # Transform all subdicts into same class, with position
+        """Call parent class. Add support for defaults."""
+        # Transform all subdicts into same class, with proper defaults
         if type(value) is dict:
             d = self._defaults[attr] if attr in self._defaults else AttributeDict()
             AttributeDict.__setattr__(self, attr, Parameters(_defaults=d, **value))
         else:
             AttributeDict.__setattr__(self, attr, value)
 
+    def __getprop__(self, prop):
+        """Call parent class. Add support for defaults."""
+        try:
+            return AttributeDict.__getprop__(self, prop)
+        except AttributeError:
+            if prop in self._defaults:
+                return self._defaults[prop]
+            else:
+                raise AttributeError
+
 
 class Dataset(Parameters):
     """
-    A dataset is a collection of data that have the same experimental
-    conditions, including:
-        - x, y, t offset
-        - source
-        - channel
+    A dataset is a collection of data that have the same experimental condition.
+
+    Notably, these conditions include:
+        - source of images
+            - x, y, t offset
+            - channel
         - experimental settings
 
     Datasets can take unlimited, user-defined parameters, including:
-        - source: path, including wildcards for selecting specific files
-        or BioFormat compatible file containing the images
-        - xlims: the region of interest' x location. [first, last), in
-        pixels. Default: all
-        - ylims: the region of interest' y location. [first, last), in
-        pixels. Default: all
-        - tlims: the frames of interest. [first, last), in frames.
-        Default: all
-        - channel: the channel of the image. Default: 0
-        - max_processes: the maximum number of processes to spawn when
-        multiprocessing. Default: number of CPUs.
-    For xlims, ylims and tlims, the first image/pixel is indexed at 0.
-    Set the outer boundary to 'None' to end limit at the last
-    image/pixel.
+        - source: path, including wildcards for selecting specific files or BioFormat compatible file containing the images, or ROI/Images object.
+            - x: the region of interest' x location. [first, last), in pixels. Default: all
+            - y: the region of interest' y location. [first, last), in pixels. Default: all
+            - t: the frames of interest. [first, last), in frames. Default: all
+            - channel: the channel of the image. Default: 0
+        - max_processes: the maximum number of processes to spawn when multiprocessing. Default: number of CPUs.
 
-    To set or modify a parameter, simply call it as an attribute or as
-    an item of the dataset, or during instantiation. Examples:
-        D = Dataset('file.nd2', comment = 'This works, but only if the
-        source is the first argument')
+    To set or modify a parameter, simply call it as an attribute or as an item of the dataset, or during instantiation. Examples:
+        D = Dataset('file.nd2', comment = 'This works, but only if the source is the first argument')
         D = Dataset(source = 'file.tif')
         D = Dataset({source: 'file.tif'}, channel = 0)
         D = Dataset(('source', 'file.tif'), channel = 0)
         D.source = 'dir_of_data/*.tif'
         D['source'] = '*c1*.jpg'
             ...
-    Any pair of (parameter, value), or list of pairs, or dictionary,
-    or object with a getitems() function, can be passed during
-    instantiation.
+    Any pair of (parameter, value), or list of pairs, or dictionary, or object with a getitems() function, can be passed during instantiation.
     """
 
     def __init__(self, *args, **kwargs):
         super(Dataset, self).__init__()
         self._defaults = Defaults.Dataset
-        self.images = None
         self.spots = None
         self.tracks = None
         # If the first argument is a string, it is the source
-        if len(args) > 0 and type(args[0]) is str:
+        if len(args) > 0 and (type(args[0]) is str or isinstance(args[0], Images)):
             args = list(args)
             self.source = args.pop(0)
         self.update(*args, **kwargs)
 
-    def __getstate__(self):
-        d = dict([i for i in self.__dict__.iteritems() if i[0] != '_attribs'])
-        d['_attribs'] = dict([i for i in self.__dict__['_attribs'].iteritems()
-                            if i[0] != 'images'])
-        return d
-
     @property
     def source(self):
-        return self.__dict__['_attribs']['source']
+        return self.__getprop__('source')
 
     @source.setter
-    def source(self, f):
-        try:
-            self.images = Images(f, self.channel, self.xlims,
-                                 self.ylims, self.tlims)
-        except ValueError:
-            pass
-        self.__dict__['_attribs']['source'] = f
+    def source(self, source):
+        """
+        Initialize the object representing the source of images.
 
-    @property
-    def xlims(self):
-        return self.__dict__['_attribs']['xlims'] if 'xlims' in self else self._defaults['xlims']
-
-    @xlims.setter
-    def xlims(self, v):
-        if self.images is not None:
-            setattr(self.images, 'xlims', v)
-        self.__dict__['_attribs']['xlims'] = v
-
-    @property
-    def ylims(self):
-        return self.__dict__['_attribs']['ylims'] if 'ylims' in self else self._defaults['ylims']
-
-    @ylims.setter
-    def ylims(self, v):
-        if self.images is not None:
-            setattr(self.images, 'ylims', v)
-        self.__dict__['_attribs']['ylims'] = v
-
-    @property
-    def tlims(self):
-        return self.__dict__['_attribs']['tlims'] if 'tlims' in self else self._defaults['tlims']
-
-    @tlims.setter
-    def tlims(self, v):
-        if self.images is not None:
-            setattr(self.images, 'tlims', v)
-        self.__dict__['_attribs']['tlims'] = v
+        Dataset takes a ROI object as a source of images, but the user can provide:
+            - an Images object
+            - a ROI object
+            - a path
+        If a Images object or a path is provided, it will be used to initialize a ROI object.
+        """
+        if isinstance(source, ROI) == True:
+            self.__setprop__('source', source)
+        else:
+            self.__setprop__('source', ROI(source))
 
     def save(self, f=None):
         """
-        Save the dataset, in its current form.
-        Saves:  the parameters
-                the spots
-                the tracks
+        Save the dataset in its current form.
+
         A Dataset saved with save() and loaded with load() should be
         in the same state as left the last time it was saved.
 
         Arguments:
-        ---------
-        - f: file to save the dataset to. If None, the function returns
-        the content of the would-be file
+            f: file to save the dataset to. If None, the function returns the content of the would-be file
         """
+        f = self.file if  f is None and 'file' in self else f
         content = pickle.dumps(self)
         if f is not None:
             with open(f, 'w') as data:
@@ -202,16 +171,17 @@ class Dataset(Parameters):
             self.file = f
         return content if f is None else None
 
-    def load(self, f):
+    def load(self, f=None):
         """
         Load a Dataset from a file or a string.
+
         A Dataset saved with save() and loaded with load() should be
         in the same state as left the last time it was saved.
 
         Arguments:
-        ---------
-        - f: file or string to load the dataset from.
+            f: file or string to load the dataset from. If None, will try to load from file in self.file.
         """
+        f = self.file if f is None and 'file' in self else None
         if os.path.isfile(f) is True:
             with open(f, 'r') as data:
                 D = pickle.load(data)
