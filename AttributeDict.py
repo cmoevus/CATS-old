@@ -113,11 +113,17 @@ class AttributeDict(object):
 
     def __getprop__(self, prop):
         """Return the value of a property. To be used in property getters"""
-        return self.__dict__['attrib'][prop]
+        try:
+            return self.__dict__['attrib'][prop]
+        except KeyError:
+            raise AttributeError
 
     def __delprop__(self, prop):
         """Delete a property. To be used in property deleters"""
-        del self.__dict__['attrib'][prop]
+        try:
+            del self.__dict__['attrib'][prop]
+        except KeyError:
+            raise AttributeError
 
     def update(self, *args, **kwargs):
         """
