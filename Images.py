@@ -37,6 +37,7 @@ class Images(object):
 
     @property
     def source(self):
+        """Return the path to the images."""
         return self._source
 
     @source.setter
@@ -52,13 +53,13 @@ class Images(object):
         # A path or dir was given
         else:
             if os.path.isdir(source) is True:
-                wildcards = '*'
+                source = source if source[-1] == '/' else source + '/'
+                source += "*"
             else:
-                source, wildcards = os.path.split(source)
-                if os.path.isdir(source) is False:
-                    raise ValueError('This path does not exists')
+                if len(glob(source)) == 0:
+                    raise ValueError('This source does not exists or is empty')
             self.is_file = False
-            self._source = source + wildcards if source[-1] == '/' else source + '/' + wildcards
+            self._source = source
 
     @property
     def dimensions(self):
@@ -89,9 +90,11 @@ class Images(object):
         if self.is_file is False:
             for f in sorted(glob(self.source)):
                 yield io.imread(f)
-        else:
+        elif self.is_file == True:
             for t in range(self.length):
                 yield self.reader.read(t=t, rescale=False)
+        else:
+            raise ValueError('Source is not accessible')
 
     def get(self, frame):
         """
@@ -102,8 +105,10 @@ class Images(object):
         """
         if self.is_file == False:
             return io.imread(sorted(glob(self.source))[frame])
-        else:
+        elif self.is_file == True:
             return self.reader.read(t=frame, rescale=False)
+        else:
+            raise ValueError('Source is not accessible')
 
     def __repr__(self):
         """Return the path to the images."""
@@ -112,6 +117,25 @@ class Images(object):
     def __str__(self):
         """Return the path to the images."""
         return self.source
+
+    def __getstate__(self):
+        """Pickle the whole object, except the reader."""
+        # Put info in memory
+        self.dimensions
+        self.length
+        return dict(((k, v) for k, v in self.__dict__.items() if k != 'reader'))
+
+    def __setstate__(self, state):
+        """Load the whole object, but tolerate the absence of the source."""
+        for k, v in state.items():
+            if k != '_source':
+                setattr(self, k, v)
+            else:
+                try:
+                    setattr(self, 'source', v)
+                except:
+                    self._source = v
+                    self.is_file = None
 
 
 class ROI(Images):
@@ -209,11 +233,11 @@ class ROI(Images):
     def __repr__(self):
         """Return the path to the images with the limits"""
         if self.images.is_file == False:
-            r = "Area between x: {0}, y: {1}, t: {2} in {3} ".format(self.x, self.y, self.t, self.source)
+            r = {'source': self.source, 'x': self.x, 'y': self.y, 't': self.t}.__repr__()
         else:
-            r = "Area between x: {0}, y: {1}, t: {2}, channel {3} in {4} ".format(self.x, self.y, self.t, self.channel, self.source)
+            r = {'source': self.source, 'x': self.x, 'y': self.y, 't': self.t, 'channel': self.channel}.__repr__()
         return r
 
     def __str__(self):
         """Return the path to the images with the limts"""
-        return self.__repr__()
+        return self.source
