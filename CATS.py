@@ -8,6 +8,7 @@ from __future__ import print_function
 # from __future__ import unicode_literals
 
 from AttributeDict import AttributeDict
+from Images import Images, ROI
 import Defaults
 import os
 import numpy as np
@@ -24,9 +25,6 @@ import networkx as nx
 from colorsys import hls_to_rgb
 from random import randrange
 from math import floor, ceil, atan, degrees
-from glob import glob
-import javabridge
-import bioformats
 from multiprocessing import Pool
 from sys import stdout
 import pickle
@@ -45,19 +43,11 @@ class Parameters(AttributeDict):
     called by the user. They will not be listed by update() or
     items()/keys()/values()/etc.
 
-    Parameters:
-    -----------
-    _position: (list) position within the _defaults parameters dict from where
-                to fetch values.
-    _defaults: (dict/AttributeDict) the object to fetch values from if they do
-                not exist in this object.
+    Keyword arguments:
+        _defaults: (dict/AttributeDict) the object to fetch values from if they do not exist in this object.
     """
 
     def __init__(self, *args, **kwargs):
-        if '_position' in kwargs:
-            self._position = kwargs['_position']
-        else:
-            self._position = []
         if '_defaults' not in kwargs:
             self._defaults = AttributeDict()
         AttributeDict.__init__(self, *args, **kwargs)
@@ -70,16 +60,12 @@ class Parameters(AttributeDict):
             try:
                 if attr[0] == '_':
                     raise KeyError
-                d = self._defaults
-                for p in self._position:
-                    d = d[p]
-                if attr in d:
-                    # Avoid modifying the Defaults dict. Kind of a lame
-                    # hack...
-                    if isinstance(d[attr], AttributeDict):
-                        return d[attr].copy()
+                if attr in self._defaults:
+                    # Avoid modifying the Defaults dict. Kind of a lame hack...
+                    if isinstance(self._defaults[attr], AttributeDict):
+                        return self._defaults[attr].copy()
                     else:
-                        return d[attr]
+                        return self._defaults[attr]
                 else:
                     raise KeyError
             except KeyError:
@@ -88,185 +74,10 @@ class Parameters(AttributeDict):
     def __setattr__(self, attr, value):
         # Transform all subdicts into same class, with position
         if type(value) is dict:
-            AttributeDict.__setattr__(self, attr, type(self)(_position=self._position + [attr], _defaults = self._defaults, **value))
+            d = self._defaults[attr] if attr in self._defaults else AttributeDict()
+            AttributeDict.__setattr__(self, attr, Parameters(_defaults=d, **value))
         else:
             AttributeDict.__setattr__(self, attr, value)
-
-
-class Images(object):
-    """
-    Wrapper for sources of images to support either bioformats or
-    directory of images.
-
-    Arguments:
-    ---------
-    - source: string. Path to the images. Can be:
-        - A directory or a path (use wildcards compatible with Python's
-        'glob' function to select specific files).
-        - A file, the type must be compatible with the BioFormats
-        library
-    - channel: the input is the channel to use. Defaults to the first
-    channel. The argument is only considered if 'source' is a file.
-    - xlims: the region to select, in x. [first, last), in pixels.
-    - ylims: the region to select, in y. [first, last), in pixels.
-    - tlims: the frames. [first, last), in frames.
-    The first image/pixel is indexed at 0.
-
-    Methods:
-    -------
-    - read: generator function that will return images one by one
-    - get: returns the image at the given frame
-
-    Properties:
-    ---------------
-    - dimensions: size of the image in (x, y), in pixels
-    - length: number of frames
-    """
-
-    def __init__(self, source, channel=0, xlims=(0, None), ylims=(0, None), tlims=(0, None)):
-        # A file was given
-        if os.path.isfile(source) is True:
-            self.is_file = True
-            self.source = source
-            self.channel = channel
-            javabridge.start_vm(class_path=bioformats.JARS)
-            self.reader = bioformats.ImageReader(self.source)
-
-        # A path or dir was given
-        else:
-            if os.path.isdir(source) is True:
-                wildcards = '*'
-            else:
-                source, wildcards = os.path.split(source)
-                # if os.path.isdir(source) is False:
-                #     raise ValueError('This path does not exists')
-            self.is_file = False
-            self.source = source + wildcards if source[-1] == '/' else source + '/' + wildcards
-
-        # Set lims. Property setters will transform into proper slices
-        self.lims = [None, None, None]
-        self.xlims, self.ylims, self.tlims = xlims, ylims, tlims
-
-    @property
-    def xlims(self):
-        return self.lims[0]
-
-    @xlims.setter
-    def xlims(self, lims):
-        self.lims[0] = slice(*lims)
-        self.get_dimensions()
-
-    @property
-    def ylims(self):
-        return self.lims[1]
-
-    @ylims.setter
-    def ylims(self, lims):
-        self.lims[1] = slice(*lims)
-        self.get_dimensions()
-
-    @property
-    def tlims(self):
-        return self.lims[2]
-
-    @tlims.setter
-    def tlims(self, lims):
-        self.lims[2] = slice(lims[0], self.length(True)) if lims[1] is None else slice(*lims)
-        self.get_length()
-
-    @property
-    def dimensions(self):
-        """Returns the shape of the images in the format (x, y), in pixels."""
-        if self._dimensions is None:
-            self.get_dimensions()
-        return self._dimensions
-
-    @dimensions.setter
-    def dimensions(self, value):
-        return AttributeError("The 'dimensions' attribute is read-only")
-
-    @property
-    def length(self):
-        """Return the number of frames in the experiment"""
-        if self._length is None:
-            self.get_length()
-        return self._length
-
-    @length.setter
-    def length(self, value):
-        return AttributeError("The 'length' attribute is read-only")
-
-    def get_dimensions(self, ignore_lims=False):
-        """
-        Return the dimension of the images or region of intereset (ROI) in pixels, as (x, y).
-
-        Arguments:
-        ---------------
-        - ignore_lims: return the dimensions of the source image if True, of the ROI if False
-        """
-        if self.is_file is False:
-            shape = io.imread(glob(self.source)[0]).shape[::-1]
-        else:
-            shape = self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY()
-        if self.xlims.stop is None:
-            x = shape[0] - self.xlims.start
-        else:
-            x = min(self.xlims.stop - self.xlims.start,
-                    shape[0] - self.xlims.start)
-        if self.ylims.stop is None:
-            y = shape[1] - self.ylims.start
-        else:
-            y = min(self.ylims.stop - self.ylims.start,
-                    shape[1] - self.ylims.start)
-            self._dimensions = (x, y)
-            return x, y if ignore_lims is False else shape
-
-    def get_length(self, ignore_lims=False):
-        """
-        Return the length of the image sequence, in frames.
-
-        Arguments:
-        ---------------
-        - ignore_lims: return the length of the source sequence if    True, of the selected sequence if False
-        """
-        if self.is_file is False:
-            l = len(glob(self.source))
-        else:
-            l = self.reader.rdr.getSizeT()
-        self._length = min(self.tlims.stop - self.tlims.start,  l - self.tlims.start)
-        return self._length if ignore_lims is False else l
-
-    def read(self):
-        """
-        Iterate over the images in the dir/file, returns a numpy array
-        of each image, one by one.
-        """
-        if self.is_file is False:
-            for f in sorted(glob(self.source))[self.tlims]:
-                yield io.imread(f)[self.ylims, self.xlims]
-        else:
-            for t in range(self.tlims.start, self.tlims.stop):
-                yield self.reader.read(t=t,
-                                       c=self.channel,
-                                       rescale=False)[self.ylims, self.xlims]
-
-    def get(self, frame):
-        """
-        Return a numpy array of the image at the given frame, or
-        tlims[0]+frame if tlims is not False
-
-        Arguments:
-        ---------
-        - frame: the frame to return, with 0 being the lower limit in
-        the object's tlims (default=0)
-        """
-        frame += self.tlims.start
-        if self.is_file is False:
-            return io.imread(sorted(glob(self.source))[frame])[self.ylims, self.xlims]
-        else:
-            return self.reader.read(t=frame,
-                                    c=self.channel,
-                                    rescale=False)[self.ylims, self.xlims]
 
 
 class Dataset(Parameters):
