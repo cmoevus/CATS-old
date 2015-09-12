@@ -18,20 +18,20 @@ class AttributeDict(object):
     loops). It supports hidden items (keys starting with '_') that do not
     appear in the item listings.
 
-    Recommendation on how to write getters/setters:
-    -----------------------------------------------
+     How to write getters/setters:
+
     In order to keep keywords logical between the dictionary view and the
-    attribute view of the object, use self.__dict__['_attribs'][k] = v, for
-    example, instead of object.__setattr__(self, 'k', v). Indeed, the latter
-    case will lead to infinite recursion. Using a different 'transitive' name,
-    for example '_k' will lead to improper listing when iterating over the
-    values, for '_k' will be hidden, and any other value will losse integrity
-    between the dict view and the attrib view.
+    attribute view of the object, when setting, getting or deleting a property,
+    use self.__setprop__ (instead of object.__setattr__()), self.__getprop__()
+    and self.__delprop__(), respectively. Indeed, object.__setattr__() will lead
+    to infinite recursion and a 'transitive' name, (for example, '_prop' for
+    'prop') will lead to loss of integrity between the dict view and the attrib
+    view,  as when iterating over the values.
 
     Arguments:
-    ----------
-    Any iterable object that can be accessed by iteritems()
-    or as a pair of (keyword, value). Acceptable arguments are:
+
+    Any iterable object that can be accessed by iteritems() or as a pair of
+    (keyword, value). Acceptable arguments are:
     - Dictionaries
     - Objects with a iteritems() function
     - Tuples/Lists of (keywork, value)
@@ -106,6 +106,18 @@ class AttributeDict(object):
             object._delattr__(self, attr)
         except AttributeError:
             del self.__dict__['_attribs'][attr]
+
+    def __setprop__(self, prop, value):
+        """Set the value of a property. To be used in property setters instead of object.__setattr__()."""
+        self.__dict__['_attribs'][prop] = value
+
+    def __getprop__(self, prop):
+        """Return the value of a property. To be used in property getters"""
+        return self.__dict__['attrib'][prop]
+
+    def __delprop__(self, prop):
+        """Delete a property. To be used in property deleters"""
+        del self.__dict__['attrib'][prop]
 
     def update(self, *args, **kwargs):
         """
