@@ -118,6 +118,7 @@ class Dataset(Parameters):
     """
 
     def __init__(self, *args, **kwargs):
+        """Initialize the object."""
         super(Dataset, self).__init__()
         self._defaults = Defaults.Dataset
         self.spots = None
@@ -130,6 +131,7 @@ class Dataset(Parameters):
 
     @property
     def source(self):
+        """Return the location of the images (ROI object)."""
         return self.__getprop__('source')
 
     @source.setter
@@ -187,8 +189,9 @@ class Dataset(Parameters):
 
     def test_detection_conditions(self, frame=0, output=None, save=True, **kwargs):
         """
-        Tests conditions for spots detection.
-        Returns a RGB image with a red pixel on each detected Gaussian center.
+        Test conditions for spots detection.
+
+        Return a RGB image with a red pixel on each detected Gaussian center.
 
         Arguments
             frame: the frame to use, from the images, to test the conditions
@@ -210,6 +213,7 @@ class Dataset(Parameters):
     def detect_spots(self, verbose=True):
         """
         Find the blobs on the Dataset's images.
+
         Uses values from Dataset.detection, that can be set using
         test_detection_conditions()
         The number of simultaneous processes can be modified using
@@ -219,7 +223,6 @@ class Dataset(Parameters):
         Arguments
             verbose: Writes about the time and frames and stuff as it works
         """
-
         # Multiprocess through it
         t = time()
         spots, pool = list(), Pool(self.max_processes)
@@ -239,12 +242,11 @@ class Dataset(Parameters):
 
     def link_spots(self, verbose=True):
         """
-        Link spots together in time
+        Link spots together in time.
 
         Argument:
             verbose: Writes about the time and frames and stuff as it works
         """
-
         # Reorganize spots by frame and prepare the Graph
         G = nx.DiGraph()
         n_frames = self.source.length
@@ -328,13 +330,12 @@ class Dataset(Parameters):
 
     def filter(self, overwrite=True, parameters=None):
         """
-        Filters the tracks obtained by link_spots based on parameters set either in self.filtration, either passed as arguments.
+        Filter the tracks obtained by link_spots based on parameters set either in self.filtration, either passed as arguments.
 
         Argument
             overwrite: bool. If True, the Dataset's tracks will be replaced by the filtered ones.
             parameters: dict. Parameters to use for filtering. If None, will use the ones from the Dataset's parameters (Dataset.filtration).
         """
-
         if parameters is None:
             parameters = self.filtration
         if parameters['max_length'] is None:
@@ -385,8 +386,7 @@ class Dataset(Parameters):
 
     def get_tracks(self, properties=None):
         """
-        Return the tracks in the Dataset as a list of spots, rather
-        than a list of spot ids.
+        Return the tracks in the Dataset as a list of spots, rather than a list of spot ids.
 
         Arguments:
             properties: list of the properties to return for each spots.
@@ -411,8 +411,7 @@ class Dataset(Parameters):
 
     def export_track(self, track, properties=None):
         """
-        Return the given track as a list of spot properties rather than
-        as a list of spot ids.
+        Return the given track as a list of spot properties rather than as a list of spot ids.
 
         Arguments:
             track: a list of spot ids from the dataset
@@ -433,6 +432,7 @@ class Dataset(Parameters):
         return t
 
     def as_isbi_xml(self, f='result.xml', snr=7, density='low', scenario='VIRUS'):
+        """Return tracks as ISBI 2012 Challenge XML for scoring."""
         root = ET.Element('root')
         t = ET.SubElement(root, 'TrackContestISBI2012')
         t.attrib = {'SNR': str(snr), 'density': density, 'scenario': scenario}
