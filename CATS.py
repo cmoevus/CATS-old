@@ -191,7 +191,7 @@ class Dataset(Parameters):
             D = pickle.loads(f)
         self.update([i for i in D.__dict__.iteritems() if i[0] != '_attribs'], D)
 
-    def test_detection_conditions(self, blur, threshold, frame, output=None, save=True):
+    def test_detection_conditions(self, frame=0, output=None, save=True, **kwargs):
         """
         Tests conditions for spots detection.
         Returns a RGB image with a red pixel on each detected Gaussian center.
@@ -203,36 +203,17 @@ class Dataset(Parameters):
             output: output file. If None, opens a window with the marked image
             save: whether to save (True) or not (False) the given detection conditions as Dataset's defaults.
         """
-        image = self.source.get(frame)
-
-        # Find spots
-        t = time()
-        spots = find_blobs(image, blur, threshold)
-        print('Found {0} spots in {1:.2f}s\r'.format(len(spots), time() - t))
-
-        # Prepare the output image
-        shape = list(image.shape)
-        ni = np.zeros([3] + shape, dtype=np.uint8)
-        ni[..., :] = image / image.max() * 255
-        ni = ni.transpose(1, 2, 0)
-
-        # Mark spots
-        for s in spots:
-            ni[s[1], s[0], :] = (255, 0, 0)
-
-        # Show/save image
+        D = Dataset(str(self.source))
+        D.source.x, D.source.y, D.source.t = self.source.x, self.source.y, (frame, frame + 1)
+        D.detection = kwargs
+        D.detect_spots()
+        images = D.draw(output)
         if output is None:
-            io.imshow(ni, cmap=plt.cm.gray)
+            io.imshow(images[0], cmap=plt.cm.gray)
             io.show()
-        else:
-            io.imsave(output, ni)
-
-        if save is True:
-            if 'detection' in self:
-                self.detection.update({'blur': blur, 'threshold': threshold})
-            else:
-                self.detection = {'blur': blur, 'threshold': threshold}
-        return spots
+        if save == True:
+            self.detection = kwargs
+        return D.spots
 
     def detect_spots(self, verbose=True):
         """
@@ -386,10 +367,37 @@ class Dataset(Parameters):
 
         return n_tracks
 
-    def draw(self):  # NOT IMPLEMENTED YET
+    def draw(self, output=None, spots=True, tracks=True):
         """
-        Draws the tracks and/or spots onto the images of the dataset.
+        Draw the tracks and/or spots onto the images of the dataset as RGB images.
+
+        Argument:
+            output: the directory in which to write the files. If None, returns the images as a list of arrays.
+            spots: if present, marks the spots on the images with a red dot at their center.
+            tracks: if present, marks the tracks on the images with a colored dot at the center of each of their spots. All spots within the same track will have the same color.
         """
+        if output is None:
+            images = list()
+        for t, image in enumerate(self.source.read()):
+            # Prepare the output image (a 8bits RGB image)
+            ni = np.zeros([3] + list(self.source.dimensions), dtype=np.uint8)
+            ni[..., :] = image / image.max() * 255
+            ni = ni.transpose(1, 2, 0)
+
+            # Mark spots
+            if spots is True and self.spots is not None:
+                for s in (self.spots[i] for i in np.where(self.spots['t'] == t)[0]):
+                    ni[int(s['y']), int(s['x']), :] = (255, 0, 0)
+
+            # Mark tracks
+            # NOT YET IMPLEMENTED
+
+            # Show/save image
+            if output is None:
+                images.append(ni)
+            else:
+                io.imsave("{0}/{1}.tif".format(output, t), ni)
+        return images if output is None else None
 
     def get_tracks(self, properties=None):
         """
@@ -495,8 +503,8 @@ def fit_gaussian_on_blobs(*args):
         try:
             r = blob[2] + 1 * np.sqrt(2)
             ylims, xlims = img.shape
-            y = (max(0, int(floor(blob[1] - r))), int(ceil(blob[1] + r)) + 1)
-            x = (max(0, int(floor(blob[0] - r))), int(ceil(blob[0] + r)) + 1)
+            y = (max(0, int(floor(blob[1] - r))), min(int(ceil(blob[1] + r)) + 1, xlims))
+            x = (max(0, int(floor(blob[0] - r))), min(int(ceil(blob[0] + r)) + 1, ylims))
             data = img[y[0]:y[1], x[0]:x[1]]
             coords = np.meshgrid(np.arange(data.shape[0]), np.arange(data.shape[1]))
 
