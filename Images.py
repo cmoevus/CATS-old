@@ -18,6 +18,9 @@ from skimage import io
 
 
 class Images(object):
+    #
+    # Make sure to update Experiment's sources/datasets function when this inherits from AttributeDict, to deal with the __iter__...
+    #
 
     """
     Access raw images and metadata.
@@ -31,6 +34,7 @@ class Images(object):
 
     def __init__(self, source):
         """Load either BioFormats or Tiff list."""
+        self.dormant = True
         self.source = source
         self._dims = None
         self._len = None
@@ -43,28 +47,39 @@ class Images(object):
     @source.setter
     def source(self, source):
         """Select between a BioFormats reader or a image list reader."""
-        # A file was given
-        if os.path.isfile(source) is True:
+        source = globify(source)
+        n_files = len(glob(source))
+        if n_files == 0:
+            raise ValueError('Source {0} is empty or does not exist.'.format(source))
+        elif n_files == 1:
             self.is_file = True
             javabridge.start_vm(class_path=bioformats.JARS)
             self.reader = bioformats.ImageReader(source)
-            self._source = source
-
-        # A path or dir was given
         else:
-            if os.path.isdir(source) is True:
-                source = source if source[-1] == '/' else source + '/'
-                source += "*"
-            else:
-                if len(glob(source)) == 0:
-                    raise ValueError('This source does not exists or is empty')
             self.is_file = False
-            self._source = source
+        self._source = source
+        self.dormant = False
+
+    def check_source(self):
+        """
+        Activate the source and return True if source can be read, raise error if not.
+
+        When loading (unpickling) an Images object, if the source is not accessible, the object's properties still will be. However, one may want to plug the source back in on the fly. If the source suddenly becomes accesible, this function will 'activate' the object for reading images.
+        """
+        if len(glob(self.source)) == 0:
+            self.dormant = True
+            raise ValueError('Source {0} is not accesible.'.format(self.source))
+        else:
+            if self.dormant == True:
+                self.source = self.source
+                self.dormant = False
+            return True
 
     @property
     def dimensions(self):
         """Return the shape of the images in the format (x, y), in pixels."""
         if self._dims is None:
+            self.check_source()
             self._dims = io.imread(glob(self.source)[0]).shape[::-1] if self.is_file == False else (self.reader.rdr.getSizeX(), self.reader.rdr.getSizeY())
         return self._dims
 
@@ -77,6 +92,7 @@ class Images(object):
     def length(self):
         """Return the number of frames in the experiment."""
         if self._len is None:
+            self.check_source()
             self._len = len(glob(self.source)) if self.is_file == False else self.reader.rdr.getSizeT()
         return self._len
 
@@ -87,14 +103,13 @@ class Images(object):
 
     def read(self):
         """Iterate over the images in the dir/file, return a numpy array representing the image."""
+        self.check_source()
         if self.is_file is False:
             for f in sorted(glob(self.source)):
                 yield io.imread(f)
         elif self.is_file == True:
             for t in range(self.length):
                 yield self.reader.read(t=t, rescale=False)
-        else:
-            raise ValueError('Source is not accessible')
 
     def get(self, frame):
         """
@@ -103,12 +118,11 @@ class Images(object):
         Keyword argument:
             frame: the frame to return
         """
+        self.check_source()
         if self.is_file == False:
             return io.imread(sorted(glob(self.source))[frame])
         elif self.is_file == True:
             return self.reader.read(t=frame, rescale=False)
-        else:
-            raise ValueError('Source is not accessible')
 
     def __repr__(self):
         """Return the path to the images."""
@@ -120,8 +134,11 @@ class Images(object):
 
     def _save_attributes(self):
         """Put the attributes from the Images into the object, in view of pickling and unpickling without the source."""
-        self.dimensions
-        self.length
+        try:
+            self.dimensions
+            self.length
+        except:
+            pass
 
     def __getstate__(self):
         """Pickle the whole object, except the reader."""
@@ -134,12 +151,11 @@ class Images(object):
         for k, v in state.items():
             if k != '_source':
                 setattr(self, k, v)
-            else:
-                try:
-                    setattr(self, 'source', v)
-                except:
-                    self._source = v
-                    self.is_file = None
+        try:
+            setattr(self, 'source', state['_source'])
+        except:
+            self._source = state['_source']
+            self.dormant = True
 
 
 class ROI(Images):
@@ -235,12 +251,15 @@ class ROI(Images):
 
     def read(self):
         """Return a generator of ndarrays of every images in the source."""
+        self.images.check_source()
         if self.images.is_file is False:
             for f in sorted(glob(self.images.source))[self.t]:
                 yield io.imread(f)[self.y, self.x]
-        else:
+        elif self.images.is_file == True:
             for t in range(self.t.start, self.t.stop):
                 yield self.images.reader.read(t=t, c=self.channel, rescale=False)[self.y, self.x]
+        else:
+            raise ValueError('Source is not accessible')
 
     def get(self, frame):
         """Return the given frame."""
@@ -258,3 +277,19 @@ class ROI(Images):
     def __str__(self):
         """Return the path to the images."""
         return self.source
+
+    def __getstate__(self):
+        """Do not inherit Images.__getstate__()."""
+        return self.__dict__
+
+    def __setstate__(self, state):
+        """Do not inherit Images.__setstate__()."""
+        for k, v in state.iteritems():
+            setattr(self, k, v)
+
+
+def globify(path):
+    """Return a glob()-able path from the given path (add the '*' wildcard)."""
+    if os.path.isdir(path):
+        path = path + '*' if path[-1] == '/' else path + '/*'
+    return path
