@@ -94,6 +94,7 @@ class Parameters(AttributeDict):
 
 
 class Dataset(Parameters):
+
     """
     A dataset is a collection of data that have the same experimental condition.
 
@@ -163,7 +164,7 @@ class Dataset(Parameters):
         Arguments:
             f: file to save the dataset to. If None, the function returns the content of the would-be file
         """
-        f = self.file if  f is None and 'file' in self else f
+        f = self.file if f is None and 'file' in self else f
         content = pickle.dumps(self)
         if f is not None:
             with open(f, 'w') as data:
@@ -181,7 +182,7 @@ class Dataset(Parameters):
         Arguments:
             f: file or string to load the dataset from. If None, will try to load from file in self.file.
         """
-        f = self.file if f is None and 'file' in self else None
+        f = self.file if f is None and 'file' in self else f
         if os.path.isfile(f) is True:
             with open(f, 'r') as data:
                 D = pickle.load(data)
@@ -195,29 +196,24 @@ class Dataset(Parameters):
         Tests conditions for spots detection.
         Returns a RGB image with a red pixel on each detected Gaussian center.
 
-        Arguments:
-        ---------
-        - blur: the standard deviation of the Gaussian kernel for
-        blurring (understand "cleaning up") the image. Should be around
-        the size of a spot (in pixels) divided by 2.
-        - threshold: the threshold to detect spots in the
-        skimage.feature.blob_log function
-        - frame: the frame to use, from the images, to test the conditions
-        - output: output file. If None, opens a window with the marked image
-        - save: whether to save (True) or not (False) the given
-        detection conditions as Dataset's defaults.
+        Arguments
+            blur: the standard deviation of the Gaussian kernel for blurring (understand "cleaning up") the image. Should be around the size of a spot (in pixels) divided by 2.
+            threshold: the threshold to detect spots in the skimage.feature.blob_log function
+            frame: the frame to use, from the images, to test the conditions
+            output: output file. If None, opens a window with the marked image
+            save: whether to save (True) or not (False) the given detection conditions as Dataset's defaults.
         """
-        image = self.images.get(frame)
+        image = self.source.get(frame)
 
         # Find spots
         t = time()
         spots = find_blobs(image, blur, threshold)
-        print('Found {0} spots in {1:.2f}s\r'.format(len(spots), time()-t))
+        print('Found {0} spots in {1:.2f}s\r'.format(len(spots), time() - t))
 
         # Prepare the output image
         shape = list(image.shape)
         ni = np.zeros([3] + shape, dtype=np.uint8)
-        ni[..., :] = image/image.max()*255
+        ni[..., :] = image / image.max() * 255
         ni = ni.transpose(1, 2, 0)
 
         # Mark spots
@@ -247,15 +243,14 @@ class Dataset(Parameters):
         Dataset.max_processes, which defaults to the number of CPUs
         (max speed, at the cost of slowing down all other work)
 
-        Arguments:
-        ---------
-        - verbose: Writes about the time and frames and stuff as it works
+        Arguments
+            verbose: Writes about the time and frames and stuff as it works
         """
 
         # Multiprocess through it
         t = time()
         spots, pool = list(), Pool(self.max_processes)
-        for blobs in pool.imap(find_blobs, iter((i, self.detection.blur, self.detection.threshold, j) for j, i in enumerate(self.images.read()))):
+        for blobs in pool.imap(find_blobs, iter((i, self.detection.blur, self.detection.threshold, j) for j, i in enumerate(self.source.read()))):
             if verbose is True:
                 print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4], time() - t), end='')
                 stdout.flush()
@@ -265,52 +260,21 @@ class Dataset(Parameters):
 
         # Save the spot list into memory
         if verbose is True:
-            print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), self.images.length(), time() - t))
+            print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), self.source.length, time() - t))
         self.spots = np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, int, int)}).view(np.recarray)
         return spots
-
-    def subpixel_resolution(self):
-        """
-        Refine the spots detected using detect_spots() to subpixel resolution
-        by fitting a Gaussian on them
-        """
-
-        # Reorganize spots by frame
-        frames = [[] for f in range(self.images.length())]
-        for i, spot in enumerate(self.spots):
-            frames[spot['t']].append(i)
-
-        # Fit a 2D gaussian on every single spot
-        for f, img in enumerate(self.images.read()):
-            for spot in frames[f]:
-                s = self.spots[spot]
-                r = s['s']+1*np.sqrt(2)
-                xlims, ylims = self.images.dimensions()
-                y = (max(0, int(floor(s['y'] - r))), int(ceil(s['y'] + r))+1)
-                x = (max(0, int(floor(s['x'] - r))), int(ceil(s['x'] + r))+1)
-                data = img[y[0]:y[1], x[0]:x[1]]
-                coords = np.meshgrid(np.arange(data.shape[0]),
-                                     np.arange(data.shape[1]))
-                try:
-                    fit, cov = curve_fit(gaussian_2d, coords, data.ravel(), p0=(s['i'], s['x']-x[0], s['y']-y[0], s['s']))
-                    self.spots[spot]['x'] = x[0]+fit[1]
-                    self.spots[spot]['y'] = y[0]+fit[2]
-                    self.spots[spot]['s'] = fit[3]
-                except:
-                    pass
 
     def link_spots(self, verbose=True):
         """
         Link spots together in time
 
-        Arguments:
-        ---------
-        - verbose: Writes about the time and frames and stuff as it works
+        Argument:
+            verbose: Writes about the time and frames and stuff as it works
         """
 
         # Reorganize spots by frame and prepare the Graph
         G = nx.DiGraph()
-        n_frames = self.images.length()
+        n_frames = self.source.length
         frames = [[] for f in range(n_frames)]
         for i, spot in enumerate(self.spots):
             frames[spot['t']].append((spot['x'], spot['y'], i))
@@ -318,21 +282,21 @@ class Dataset(Parameters):
 
         # Make optimal pairs for all acceptable frame intervals
         # (as defined in max_blink)
-        for delta in range(1, self.linkage.max_blink+1):
+        for delta in range(1, self.linkage.max_blink + 1):
             if verbose is True:
                 print('\rDelta frames: {0}'.format(delta), end='')
                 stdout.flush()
             for f in range(n_frames - delta):
                 # Matrix of distances between spots
                 d = np.abs(np.array(frames[f])[:, np.newaxis, :2] -
-                           np.array(frames[f+delta])[:, :2])
+                           np.array(frames[f + delta])[:, :2])
 
                 # Filter out the spots with distances that excess max_disp in x and/or y
                 disp_filter = d - self.linkage.max_disp >= 0
                 disp_mask = np.logical_or(disp_filter[:, :, 0], disp_filter[:, :, 1])
 
                 # Reduce to one dimension
-                d = np.sqrt(d[:, :, 0]**2+d[:, :, 1]**2)
+                d = np.sqrt(d[:, :, 0]**2 + d[:, :, 1]**2)
 
                 # Find the optimal pairs
                 f_best = d != np.min(d, axis=0)
@@ -343,7 +307,7 @@ class Dataset(Parameters):
 
                 # Organize in pairs, or edges, for graph purposes
                 for s1, s2 in np.array(np.where(pairs.mask == False)).T:
-                    G.add_edge(frames[f][s1][2], frames[f+delta][s2][2],
+                    G.add_edge(frames[f][s1][2], frames[f + delta][s2][2],
                                weight=d[s1][s2])
 
         # Only keep the tracks that are not ambiguous (1 spot per frame max)
@@ -375,11 +339,8 @@ class Dataset(Parameters):
                         if len(pair[0]) > 1:
                             pair = (np.array(pair).T)[0]
                         now, after = [now[pair[0]]], [after[pair[1]]]
-                track = sorted([t[0] for t in track.values()],
-                                key=lambda a: self.spots[a]['t'])
+                track = sorted([t[0] for t in track.values()], key=lambda a: self.spots[a]['t'])
                 ts = [self.spots[s]['t'] for s in track]
-                if len(ts) != len(set(ts)):
-                    print('Merde')
                 a_tracks.append(track)
 
         if verbose is True:
@@ -394,29 +355,23 @@ class Dataset(Parameters):
 
     def filter(self, overwrite=True, parameters=None):
         """
-        Filters the tracks obtained by link_spots based on parameters
-        set either in self.filtration, either passed as
-        arguments.
+        Filters the tracks obtained by link_spots based on parameters set either in self.filtration, either passed as arguments.
 
-        Arguments:
-        ---------
-        - overwrite: bool. If True, the Dataset's tracks will be
-        replaced by the filtered ones.
-        - parameters: dict. Parameters to use for filtering. If None,
-        will use the ones from the Dataset's parameters
-        (Dataset.filtration).
+        Argument
+            overwrite: bool. If True, the Dataset's tracks will be replaced by the filtered ones.
+            parameters: dict. Parameters to use for filtering. If None, will use the ones from the Dataset's parameters (Dataset.filtration).
         """
 
         if parameters is None:
             parameters = self.filtration
         if parameters['max_length'] is None:
-            parameters['max_length'] = self.images.length()
+            parameters['max_length'] = self.source.length
         n_tracks = list()
         for track in self.tracks:
             if parameters['min_length'] <= len(track) <= parameters['max_length']:
                 if np.abs(np.diff(sorted([self.spots[s]['t'] for s in track]))).mean() <= parameters['mean_blink']:
                     keep = True
-                    x, y = self.images.dimensions()
+                    x, y = self.source.dimensions
                     for spot in track:
                         s_x, s_y = self.spots[spot]['x'], self.spots[spot]['y']
                         if s_x > x or s_x < 0 or s_y > y or s_y < 0:
@@ -507,13 +462,11 @@ def find_blobs(*args):
     deviation of the gaussian kernel and i is the intensity at the
     center.
 
-    Arguments:
-    ---------
-    args: (optionally, for multiprocessing, list of:)
-    - image: a numpy array representing the image to analyze
-    - blur: see ndimage.gaussian_filter()'s 'sigma' argument
-    - threshold: see scipy.feature.blob_log()'s 'threshold' argument
-    - extra: information to be added at the end of the blob's properties
+    Arguments:  (as a list, for multiprocessing)
+        image: a numpy array representing the image to analyze
+        blur: see ndimage.gaussian_filter()'s 'sigma' argument
+        threshold: see scipy.feature.blob_log()'s 'threshold' argument
+        extra: information to be added at the end of the blob's properties
     """
     args = args[0] if len(args) == 1 else args
     image, blur, threshold, extra = args[0], args[1], args[2], args[3:]
@@ -523,7 +476,43 @@ def find_blobs(*args):
         blob = [x, y, s, image[y][x]]
         blob.extend(extra)
         blobs.append(tuple(blob))
-    return blobs
+    return fit_gaussian_on_blobs(image, blobs)
+
+
+def fit_gaussian_on_blobs(*args):
+    """
+    Fit a Gaussian curve on the blobs in an image. Return the given list of blobs with the fitted values.
+
+    Arguments (as a list of both, for multiprocessing):
+        img: the ndarray of the image containing the blobs
+        blobs: a list of blobs (x, y, sigma, intensity, ...) that need to go subpixel resolution. All extra information after 'intensity'  will be kept in the output.
+    """
+    if len(args) == 1:
+        args = args[0]
+    img, blobs = args[0], args[1]
+    spr_blobs = list()
+    for blob in blobs:
+        try:
+            r = blob[2] + 1 * np.sqrt(2)
+            ylims, xlims = img.shape
+            y = (max(0, int(floor(blob[1] - r))), int(ceil(blob[1] + r)) + 1)
+            x = (max(0, int(floor(blob[0] - r))), int(ceil(blob[0] + r)) + 1)
+            data = img[y[0]:y[1], x[0]:x[1]]
+            coords = np.meshgrid(np.arange(data.shape[0]), np.arange(data.shape[1]))
+
+            fit, cov = curve_fit(gaussian_2d, coords, data.ravel(), p0=(blob[3], blob[0] - x[0], blob[1] - y[0], blob[2]))
+
+            spr_blob = [x[0] + fit[1], y[0] + fit[2], fit[3], fit[0]]
+            if len(blob) > 4:
+                spr_blob.extend(blob[4:])
+            if x[0] <= spr_blob[0] <= x[1] and y[0] <= spr_blob[1] <= y[1]:
+                spr_blobs.append(tuple(spr_blob))
+            else:
+                raise ValueError
+        except:
+            spr_blobs.append(blob)
+
+    return spr_blobs
 
 
 class Experiment(object):
@@ -545,6 +534,7 @@ class Experiment(object):
     - Any combination of keywords/list of parameters/dicts, just like
     for Datasets
     """
+
     def __init__(self, *args, **kwargs):
         self.datasets = []
         self.parameters = Parameters()
@@ -569,6 +559,7 @@ class Experiment(object):
                     d = (d, )
                 for k, v in d:
                     setattr(self, k, v)
+
         # Import keywords
         for k, v in kwargs.iteritems():
             setattr(self, k, v)
@@ -851,8 +842,8 @@ class Experiment(object):
             # Find peaks
             d_proj = np.diff(projection)
             tangents = list()
-            for i in range(0, len(d_proj)-1):
-                neighbors = sorted((d_proj[i], d_proj[i+1]))
+            for i in range(0, len(d_proj) - 1):
+                neighbors = sorted((d_proj[i], d_proj[i + 1]))
                 if neighbors[0] < 0 and neighbors[1] > 0:
                     tangents.extend([i])
             extremas = np.where(np.square(np.diff(d_proj)) - np.square(d_proj[:-1]) >= 0)[0]
@@ -860,10 +851,10 @@ class Experiment(object):
             distances = np.subtract.outer(peaks, peaks)
 
             # Build sets of barriers
-            max_sets = int(ceil(len(projection) - dbp)/dbb) + 1
+            max_sets = int(ceil(len(projection) - dbp) / dbb) + 1
             exp_dists, sets = [dbp], list()
             for i in range(1, max_sets):
-                exp_dists.extend([i*dbb - dbp, i*dbb])
+                exp_dists.extend([i * dbb - dbp, i * dbb])
 
             # Find the best possible match for consecutive barriers-pedestals
             # for each peak
@@ -947,11 +938,11 @@ class Experiment(object):
         """
 
         images = sorted(os.listdir(source))
-        shape = io.imread(source+'/'+images[0]).shape
+        shape = io.imread(source + '/' + images[0]).shape
         bins = np.linspace(0, shape[1], bins, dtype=int)
         barriers = list()
         for i in range(len(bins) - 1):
-            barriers.append([i for j in self.find_barriers(source, ylims=(bins[i], bins[i+1])) for i in j])
+            barriers.append([i for j in self.find_barriers(source, ylims=(bins[i], bins[i + 1])) for i in j])
 
         m = list()
         for y in np.array(barriers).T:
@@ -960,7 +951,7 @@ class Experiment(object):
         angle = degrees(atan(np.mean(m)))
 
         for i in images:
-            io.imsave(destination+'/'+i, rotate(io.imread(source+'/'+i), angle,
+            io.imsave(destination + '/' + i, rotate(io.imread(source + '/' + i), angle,
                       mode='nearest',
                       preserve_range=True).astype(dtype=np.int16))
 
@@ -1031,21 +1022,21 @@ class Experiment(object):
         else:
             tracks = self.get_tracks(prop)
             data = [np.mean(track) for track in tracks]
-        bins = int(ceil((max(data) - min(data))/binsize))
+        bins = int(ceil((max(data) - min(data)) / binsize))
         plt.hist(data, bins=bins)
         plt.show()
 
 
 def gaussian_2d(coords, A, x0, y0, s):
     x, y = coords
-    return (A*np.exp(((x-x0)**2+(y-y0)**2)/(-2*s**2))).ravel()
+    return (A * np.exp(((x - x0)**2 + (y - y0)**2) / (-2 * s**2))).ravel()
 
 
 def draw_tracks(tracks, spots, d, destination, draw_spots=False):
     n_frames = np.array(spots, dtype=int)[:, 3].max() + 1
 
     # Make colors
-    colors = [np.array(hls_to_rgb(randrange(0, 360)/360, randrange(20, 80, 1)/100, randrange(20, 80, 10)/100))*255 for i in tracks]
+    colors = [np.array(hls_to_rgb(randrange(0, 360) / 360, randrange(20, 80, 1) / 100, randrange(20, 80, 10) / 100)) * 255 for i in tracks]
 
     # Separate tracks per image, because memory is short
     frames = [[] for f in range(n_frames)]
@@ -1073,23 +1064,23 @@ def draw_tracks(tracks, spots, d, destination, draw_spots=False):
     for f in sorted(os.listdir(d)):
 
         # Make images RGB
-        i = io.imread(d+'/'+f)
+        i = io.imread(d + '/' + f)
         shape = list(i.shape)
         ni = np.zeros([3] + shape)
-        ni[..., :] = i/i.max()*255
+        ni[..., :] = i / i.max() * 255
         ni = ni.transpose(1, 2, 0)
 
         # Write spots
         for s in frames[j]:
             ni[s[1], s[0], :] = s[2:]
-        misc.imsave(os.path.normpath(destination)+'/'+str(j)+'.tif', ni)
+        misc.imsave(os.path.normpath(destination) + '/' + str(j) + '.tif', ni)
         j += 1
 
 
 # Draws a histogram of position on DNA
 def histogram(tracks, spots, binsize=3, prop=0, use_tracks=True):
     lims = (0, max([spot[prop] for spot in spots]))
-    bins = int(ceil((lims[1] - lims[0])/binsize))
+    bins = int(ceil((lims[1] - lims[0]) / binsize))
 
     if use_tracks is False:
         data = [spot[prop] for spot in spots]
@@ -1106,22 +1097,22 @@ def histogram(tracks, spots, binsize=3, prop=0, use_tracks=True):
 
 # Zhi plot drawing function: dwell time vs initial binding time
 def zhi_plot(tracks, spots):
-    fps = 1/0.06
-    binsize = int(ceil(1000/fps))
-    exp_len = int(ceil(10000/fps))
+    fps = 1 / 0.06
+    binsize = int(ceil(1000 / fps))
+    exp_len = int(ceil(10000 / fps))
 
     bins = [[] for t in range(0, exp_len, binsize)]
     for track in tracks:
         frames = [spots[s][3] for s in track]
         m = min(frames)
-        dt = (max(frames) - m)/fps
-        bins[int(floor((m/fps)/binsize))].append(dt)
+        dt = (max(frames) - m) / fps
+        bins[int(floor((m / fps) / binsize))].append(dt)
 
     # All the dwell times
     xs = list()
     ys = list()
     for i, b in enumerate(bins):
-        xs.extend([i*binsize for d in b])
+        xs.extend([i * binsize for d in b])
         ys.extend(b)
     plt.plot(xs, ys, 'g.', label='Calculated dwell times')
 
