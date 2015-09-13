@@ -34,14 +34,11 @@ import xml.etree.ElementTree as ET
 
 
 class Parameters(AttributeDict):
-    """
-    List of parameters accessible via AttributeDict properties that also
-    support default values.
 
-    Parameters starting with '_' will be hidden. These can be Parameters'
-    parameters or voluntarly hidden parameters. They have to be explicitely
-    called by the user. They will not be listed by update() or
-    items()/keys()/values()/etc.
+    """
+    List of parameters accessible via AttributeDict properties that also support default values.
+
+    Parameters starting with '_' will be hidden. These can be Parameters' parameters or voluntarly hidden parameters. They have to be explicitely called by the user. They will not be listed by update() or items()/keys()/values()/etc.
 
     Keyword arguments:
         _defaults: (dict/AttributeDict) the object to fetch values from if they do not exist in this object.
@@ -62,14 +59,11 @@ class Parameters(AttributeDict):
             try:
                 if attr[0] == '_':
                     raise KeyError
-                if attr in self._defaults:
-                    # Avoid modifying the Defaults dict. Kind of a lame hack...
-                    if isinstance(self._defaults[attr], AttributeDict):
-                        return self._defaults[attr].copy()
-                    else:
-                        return self._defaults[attr]
+                # Avoid modifying the Defaults dict. Kind of a lame hack...
+                if isinstance(self._defaults[attr], AttributeDict):
+                    return self._defaults[attr].copy()
                 else:
-                    raise KeyError
+                    return self._defaults[attr]
             except KeyError:
                 raise AttributeError(error)
 
@@ -197,13 +191,11 @@ class Dataset(Parameters):
         Returns a RGB image with a red pixel on each detected Gaussian center.
 
         Arguments
-            blur: the standard deviation of the Gaussian kernel for blurring (understand "cleaning up") the image. Should be around the size of a spot (in pixels) divided by 2.
-            threshold: the threshold to detect spots in the skimage.feature.blob_log function
             frame: the frame to use, from the images, to test the conditions
             output: output file. If None, opens a window with the marked image
             save: whether to save (True) or not (False) the given detection conditions as Dataset's defaults.
         """
-        D = Dataset(str(self.source))
+        D = Dataset(self.source.images)
         D.source.x, D.source.y, D.source.t = self.source.x, self.source.y, (frame, frame + 1)
         D.detection = kwargs
         D.detect_spots()
@@ -351,15 +343,7 @@ class Dataset(Parameters):
         for track in self.tracks:
             if parameters['min_length'] <= len(track) <= parameters['max_length']:
                 if np.abs(np.diff(sorted([self.spots[s]['t'] for s in track]))).mean() <= parameters['mean_blink']:
-                    keep = True
-                    x, y = self.source.dimensions
-                    for spot in track:
-                        s_x, s_y = self.spots[spot]['x'], self.spots[spot]['y']
-                        if s_x > x or s_x < 0 or s_y > y or s_y < 0:
-                            keep = False
-                            break
-                    if keep == True:
-                        n_tracks.append(track)
+                    n_tracks.append(track)
 
         if overwrite is True:
             self.filtration = parameters
@@ -401,12 +385,12 @@ class Dataset(Parameters):
 
     def get_tracks(self, properties=None):
         """
-        Returns the tracks in the Dataset as a list of spots, rather
+        Return the tracks in the Dataset as a list of spots, rather
         than a list of spot ids.
 
         Arguments:
-        ---------
-        - properties: list of the properties to return for each spots.
+            properties: list of the properties to return for each spots.
+
         Will return the properties in the same order as given. If None,
         returns all properties.
             - x: the position, in x
@@ -431,8 +415,9 @@ class Dataset(Parameters):
         as a list of spot ids.
 
         Arguments:
-        - track: a list of spot ids from the dataset
-        - properties: list of the properties to return for each spots.
+            track: a list of spot ids from the dataset
+            properties: list of the properties to return for each spots.
+
         Will return the properties in the same order as given. If None,
         returns all properties.
             - x: the position, in x
@@ -547,7 +532,7 @@ class Experiment(object):
         self.datasets = []
         self.parameters = Parameters()
 
-        # Only one argument given: path to the dataset
+        # Only one argument given: path to the the save file or images
         if len(args) == 1:
             try:
                 load = tarfile.is_tarfile(args[0])
@@ -642,18 +627,13 @@ class Experiment(object):
 
     def add_dataset(self, *args, **kwargs):
         """
-        Adds a dataset to the experiment
+        Add a dataset to the experiment.
 
         Possible arguments:
         ------------------
         A) Dataset object. The dataset will directly be added to the Experiment.
-        B) list/dict of parameters or keywords: the Dataset will receive
-        the Experiment's parameters first, and then those provided
-        C) string (Path to the source of images) + list/keywords
-        parameters. The Dataset source will be set with the string (has
-        to be the first argument). Keywords or lists/dicts can be added
-        as parameters, that will be added on top of the Experiment's
-        parameters.
+        B) list/dict of parameters or keywords: the Dataset will receive the Experiment's parameters first, and then those provided
+        C) string (Path to the source of images) + list/keywords parameters. The Dataset source will be set with the string (has to be the first argument). Keywords or lists/dicts can be added as parameters, that will be added on top of the Experiment's parameters.
         """
         args = list(args)
         if len(args) == 1 and isinstance(args[0], Dataset):
@@ -667,19 +647,12 @@ class Experiment(object):
 
     def save(self, f=None):
         """
-        Save the Experiment, its datasets and parameters.
-        An Experiment saved with save() and loaded with load() should
-        be in the same state as left the last time it was saved.
+        Save the Experiment in its current state for future use.
 
-        The saved file will actually be an archive of the pickled objects.
+        An Experiment saved with save() and loaded with load() should be in the same state as left the last time it was saved.
 
         Arguments:
-        ---------
-        - f: file to save the experiment to. If None, the experiment
-        is saved to the last file it was saved to or loaded from, which
-        is written in the 'file' parameter of the experiment. If this
-        parameter does not exist, the function returns the content of
-        the would-be file as an array of pickled objects.
+            f: file to save the experiment to. If None, the experiment is saved to the last file it was saved to or loaded from, which is written in the 'file' parameter of the experiment. If this parameter does not exist, the function returns the content of the would-be file as an array of pickled objects.
         """
         content = [pickle.dumps(d) for d in self.datasets]
         content.append(pickle.dumps(self.parameters))
@@ -699,16 +672,12 @@ class Experiment(object):
 
     def load(self, f=None):
         """
-        Loads an Experiment from a file or a string. An Experiment saved
-        with save() and loaded with load() should be in the same state
-        as left the last time it was saved.
+        Load an Experiment from a file or a string.
+
+        An Experiment saved with save() and loaded with load() should be in the same state as left the last time it was saved.
 
         Arguments:
-        ---------
-        - f: file or array of pickled objects to load the experiment
-        from. If None, the experiment is loaded from the last file it
-        was saved to or loaded from, which is written in the 'file'
-        parameter of the experiment.
+            f: file or array of pickled objects to load the experiment from. If None, the experiment is loaded from the last file itwas saved to or loaded from, which is written in the 'file' parameter of the experiment.
         """
         if f is None:
             if 'file' in self:
@@ -732,18 +701,11 @@ class Experiment(object):
                 if type(f) == str:
                     self.file = os.path.abspath(f)
 
-    # Spots and Tracks
     def test_detection_conditions(self):  # NOT IMPLEMENTED YET
-        """
-        Finds the optimal detection conditions in each of the underlying
-        dataset.
-        """
+        """Find the optimal detection conditions in each of the underlying dataset."""
 
     def find_spots(self, verbose=True):
-        """
-        Detect spots in each of the underlying datasets. See
-        Dataset.detect_spots
-        """
+        """Detect spots in each of the underlying datasets."""
         t, n = time(), 0
         for i, ds in enumerate(self.datasets):
             if verbose is True:
@@ -755,10 +717,7 @@ class Experiment(object):
         return True
 
     def link_spots(self, verbose=True):
-        """
-        Link spots to form tracks in each of the underlying datasets.
-        See Dataset.link_spots
-        """
+        """Link spots to form tracks in each of the underlying datasets."""
         t, n = time(), 0
         for i, ds in enumerate(self.datasets):
             if verbose is True:
@@ -772,10 +731,7 @@ class Experiment(object):
         return True
 
     def filter(self, overwrite=True, parameters=None):
-        """
-        Filter tracks in each of the underlying datasets.
-        See Dataset.link_spots
-        """
+        """Filter tracks in each of the underlying datasets."""
         filtered_tracks = list()
         for ds in self.datasets:
             tracks = ds.filter(overwrite, parameters)
@@ -785,35 +741,24 @@ class Experiment(object):
 
     def get_tracks(self, properties=None):
         """
-        Returns the tracks from each dataset of the experiment as a
-        list of spot properties
+        Return the tracks from each dataset of the experiment as a list of spot properties.
 
         Arguments:
-        ---------
-        - properties: list of the properties to return for each spots.
-        Will return the properties in the same order as given. If None,
-        returns all properties.
-            - x: the position, in x
-            - y: the position, in y
-            - s: the standard deviation of the gaussian kernel
-            - i: the intensity at (x, y)
-            - t: the frame
-            Example list: ['x', 'y', 't']
+            properties: list of the properties to return for each spots.
+
+        Will return the properties in the same order as given. If None, returns all properties.
+            x: the position, in x
+            y: the position, in y
+            s: the standard deviation of the gaussian kernel
+            i: the intensity at (x, y)
+            t: the frame
+        Example list: ['x', 'y', 't']
         """
         tracks = list()
         for ds in self.datasets:
             tracks.extend(ds.get_tracks(properties))
         return tracks
 
-    def subpixel_resolution(self, datasets=None):
-        """
-        This is some pretty bad docstring.
-        """
-        datasets = range(len(self.datasets)) if datasets is None else datasets
-        for ds in datasets:
-            self.datasets[ds].subpixel_resolution()
-
-    # Transformation of images into datasets
     def find_barriers(self, datasets=None, overwrite=True):
         """
         Finds the barriers in an experiment.
@@ -822,11 +767,8 @@ class Experiment(object):
             - IMCOMPLETE BARRIER SETS
 
         Arguments:
-        --------
-        - datasets: list of the ids of the datasets to find barriers
-        in. If None, tries all datasets
-        - overwrite: bool. If True, the given datasets will be replaced
-        by one dataset for each set of their barriers.
+            datasets: list of the ids of the datasets to find barriers in. If None, tries all datasets
+            overwrite: bool. If True, the given datasets will be replaced by one dataset for each set of their barriers.
         """
         barrier_datasets = list()
         if datasets is None:
@@ -944,7 +886,6 @@ class Experiment(object):
         bins: number of bins to split the image in, vertically
               (lower if noise is higher)
         """
-
         images = sorted(os.listdir(source))
         shape = io.imread(source + '/' + images[0]).shape
         bins = np.linspace(0, shape[1], bins, dtype=int)
@@ -965,10 +906,9 @@ class Experiment(object):
 
         return True
 
-    # Analysis
     def sy_plot(self, binsize=3):
         """
-        Draws a SY (Stacked Ys) plot based on the tracks
+        Draw a SY (Stacked Ys) plot based on the tracks.
         """
 
         # Define the limits in X
@@ -1022,7 +962,11 @@ class Experiment(object):
 
     def histogram(self, prop='x', binsize=3):
         """
-        Survival plot
+        Draw an histogram of the given property.
+
+        Arguments:
+            prop: any spot property (x, y, s, t, i) or 'l', for length of tracks.
+            binsize: number of pixels/units per bin.
         """
         if prop == 'l':
             tracks = self.get_tracks('t')
@@ -1036,6 +980,7 @@ class Experiment(object):
 
 
 def gaussian_2d(coords, A, x0, y0, s):
+    """Draw a 2D gaussian with given properties."""
     x, y = coords
     return (A * np.exp(((x - x0)**2 + (y - y0)**2) / (-2 * s**2))).ravel()
 
@@ -1139,18 +1084,16 @@ def zhi_plot(tracks, spots):
 # Return the transitive reduction of a given graph
 def transitive_reduction(G, order=None, adj_matrix=False):
     """
-    Returns the transitive reduction of a given graph
+    Return the transitive reduction of a given graph.
+
     Based on Aho, A. V., Garey, M. R., Ullman, J. D. The Transitive
     Reduction of a Directed Graph. SIAM Journal on Computing 1, 131–137
     (1972).
 
     Arguments:
-    ----------
-    - order: the order in which the vertices appear in time (to fit the
-    second condition). If None, uses the same order as in the graph
-    - adj_matrix: returns an adjacency matrix if True, a Graph if False
+        order: the order in which the vertices appear in time (to fit the second condition). If None, uses the same order as in the graph
+        adj_matrix: returns an adjacency matrix if True, a Graph if False
     """
-
     # Transitive closure
     MT = transitive_closure(G, order, True)
 
@@ -1176,16 +1119,16 @@ def transitive_reduction(G, order=None, adj_matrix=False):
 # Returns the transitive closure of a given Graph
 def transitive_closure(G, order=None, adj_matrix=False):
     """
+    Return the transivite closure of a graph.
+
     This method assumes that your graph is:
         1. Directed acyclic
         2. Organized so that a node can only interact with a node
         positioned after it, in the adjacency matrix
 
     Arguments:
-    ----------
-    - order: the order in which the vertices appear in time (to fit the
-    second condition)
-    - adj_matrix: returns an adjacency matrix if True, a Graph if False
+        order: the order in which the vertices appear in time (to fit the second condition)
+        adj_matrix: returns an adjacency matrix if True, a Graph if False
     """
     M = nx.to_numpy_matrix(G, nodelist=order, weight=None)
 
