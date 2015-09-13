@@ -8,7 +8,7 @@ from __future__ import print_function
 # from __future__ import unicode_literals
 
 from AttributeDict import AttributeDict
-from Images import Images, ROI
+from Images import Images, ROI, globify
 import Defaults
 import os
 import numpy as np
@@ -84,7 +84,7 @@ class Parameters(AttributeDict):
             if prop in self._defaults:
                 return self._defaults[prop]
             else:
-                raise AttributeError
+                raise AttributeError('{0} not found.'.format(prop))
 
 
 class Dataset(Parameters):
@@ -120,7 +120,7 @@ class Dataset(Parameters):
     def __init__(self, *args, **kwargs):
         """Initialize the object."""
         super(Dataset, self).__init__()
-        self._defaults = Defaults.Dataset
+        self._defaults = Defaults.Experiment
         self.spots = None
         self.tracks = None
         # If the first argument is a string, it is the source
@@ -508,7 +508,185 @@ def fit_gaussian_on_blobs(*args):
     return spr_blobs
 
 
-class Experiment(object):
+class Experiment(Parameters):
+
+    """
+    Representation of a single-molecule experiment.
+
+    An experiment can be:
+        1) A set of data collected in some specific conditions
+        2) A collection of datasets aiming to test an hypothesis
+    This class reflects both definitions. An Experiment can contain several sources of images, from which it will extract datasets. Data from each dataset will be merged as the data of the Experiment.
+
+    To initiate an Experiment, you can use:
+        The path (or a list of path) to the images, plus keywords arguments, if desired
+        A path to a save file.
+        Any combination of keywords/list of parameters/dicts, just like for Datasets
+
+    Properties:
+
+    sources: the experiment's images. Can set it as a path or a list of paths.
+    source: same as sources, but will return None if no sources, or the object if there only is one source.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Load given sources and arguments."""
+        super(Parameters, self).__init__(_defaults=Defaults.Experiment)
+        self.__setprop__('sources', [])
+        self.__setprop__('datasets', [])
+        args = list(args)
+        if len(args) > 0 and isinstance(args[0], str):
+            try:
+                self.load(args[0])
+                del args[0]
+            except:
+                self.add_dataset(args[0])
+                del[args[0]]
+        self.update(*args, **kwargs)
+
+    @property
+    def sources(self):
+        """List Images objects associated with the Experiment."""
+        return self.__getprop__('sources')
+
+    @sources.setter
+    def sources(self, value):
+        """Add/Set Images object(s) to the Experiment."""
+        self.__setprop__('sources', list())
+        if '__iter__' not in dir(value):
+            value = [value]
+        for v in value:
+            self.add_source(v)
+
+    @property
+    def source(self):
+        """Dumb unary alias for sources."""
+        sources = self.__getprop__('sources')
+        if len(sources) == 0:
+            return None
+        elif len(sources) == 1:
+            return sources[0]
+        else:
+            return sources
+
+    @source.setter
+    def source(self, value):
+        """Dumb unary alias for sources."""
+        return setattr(self, 'sources', value)
+
+    def add_source(self, source):
+        """
+        Add a source to the existing list.
+
+        Argument:
+            source: a path or an Images object.
+        """
+        if self.has_source(source) == False:
+            if isinstance(source, Images):
+                self.sources.append(source)
+            else:
+                self.sources.append(Images(source))
+
+    def has_source(self, source):
+        """
+        Return the source if it is in the Experiment has the given source, return False if not.
+
+        Argument:
+            source: Images, ROI or string representing a source of images (see Images)
+        """
+        source = source.source if isinstance(source, Images) else globify(source)
+        sources = [s.source for s in self.sources]
+        if source in sources:
+            return self.sources[sources.index(source)]
+        else:
+            return False
+
+    @property
+    def datasets(self):
+        """List the datasets associated with the Experiment."""
+        return self.__getprop__('datasets')
+
+    @datasets.setter
+    def datasets(self, value):
+        """Set/Add datasets to the Experiment."""
+        self.__setprop__('datasets', list())
+        if isinstance(value, Dataset) or '__iter__' not in dir(value):
+            # Because Dataset also has a __iter__ method...
+            value = [value]
+        for v in value:
+            self.add_dataset(v)
+
+    def add_dataset(self, dataset):
+        """
+        Add a dataset to the existing list.
+
+        To avoid duplication of Images objects, the Images objects will be centralize so that (1) the given datasets' source is changed to the object already in the Experiment, if they represent the same files or (2) the datasets' source is added to the Experiment.
+
+        Argument:
+            dataset: anything that can initiate a Dataset object.
+        """
+        if isinstance(dataset, Images) or isinstance(dataset, str):
+            source = self.has_source(dataset)
+            if source == False:
+                if isinstance(dataset, ROI):
+                    self.add_source(dataset.images)
+                else:
+                    self.add_source(dataset)
+                source = self.sources[-1]
+            if isinstance(dataset, ROI):
+                dataset.images = source
+                dataset = Dataset(dataset, _defaults=self)
+            else:
+                dataset = Dataset(source, _defaults=self)
+        else:
+            if isinstance(dataset, Dataset) == False:
+                dataset = Dataset(dataset)
+            source = self.has_source(dataset.source)
+            if source == False:
+                self.add_source(dataset.source.images)
+            else:
+                dataset.source.images = source
+            dataset._defaults = self
+        self.datasets.append(dataset)
+
+    def save(self, f=None):
+        """
+        Save the Experiment in its current state for future use.
+
+        An Experiment saved with save() and loaded with load() should be in the same state as left the last time it was saved.
+
+        Arguments:
+            f: file to save the experiment to. If None, the experiment is saved to the last file it was saved to or loaded from, which is written in the 'file' parameter of the experiment. If this parameter does not exist, the function returns the content of the would-be file as an array of pickled objects.
+        """
+        f = self.file if f is None and 'file' in self else f
+        content = pickle.dumps(self)
+        if f is not None:
+            with open(f, 'w') as data:
+                data.write(content)
+            self.file = f
+        return content if f is None else None
+
+    def load(self, f=None):
+        """
+        Load an Experiment from a file or a string.
+
+        An Experiment saved with save() and loaded with load() should be in the same state as left the last time it was saved.
+
+        Arguments:
+            f: file or array of pickled objects to load the experiment from. If None, the experiment is loaded from the last file itwas saved to or loaded from, which is written in the 'file' parameter of the experiment.
+        """
+        f = self.file if f is None and 'file' in self else f
+        if os.path.isfile(f) is True:
+            with open(f, 'r') as data:
+                E = pickle.load(data)
+            self.file = f
+        else:
+            E = pickle.loads(f)
+        self.__setprop__('sources', E.sources)
+        self.__setprop__('datasets', E.datasets)
+        self.update([i for i in E.__dict__.iteritems() if i[0] not in ('_attribs', 'sources', 'datasets')], E)
+
+class OldExperiment(object):
 
     """
     An experiment can be:
