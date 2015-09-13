@@ -13,13 +13,9 @@ class AttributeDict(object):
     """
     Dictionary-like object that allow to access items as an object's attributes.
 
-    AttributeDicts allow to add getters and setters on items, as well as to
-    access them through AttributeDict.key or AttributeDict['key']. It can be
-    used as a dictionary for enumerating items (as in **kwargs or in for
-    loops). It supports hidden items (keys starting with '_') that do not
-    appear in the item listings.
+    AttributeDicts allow to add getters and setters on items, as well as to access them through AttributeDict.key or AttributeDict['key']. It can be used as a dictionary for enumerating items (as in **kwargs or in for loops). It supports hidden items (keys starting with '_') that do not appear in the item listings.
 
-     How to write getters/setters:
+    How to write getters/setters:
 
     In order to keep keywords logical between the dictionary view and the
     attribute view of the object, when setting, getting or deleting a property,
@@ -29,15 +25,21 @@ class AttributeDict(object):
     'prop') will lead to loss of integrity between the dict view and the attrib
     view,  as when iterating over the values.
 
+    Methods:
+
+    update: just like dict()'s update.
+    copy: just like dict()'s copy.
+    deepcopy: copy recursively the object so that no reference is left.
+
     Arguments:
 
     Any iterable object that can be accessed by iteritems() or as a pair of
     (keyword, value). Acceptable arguments are:
-    - Dictionaries
-    - Objects with a iteritems() function
-    - Tuples/Lists of (keywork, value)
-    - (keyword, value) as a tuple/list
-    - keyworded arguments
+        Dictionaries
+        Objects with a iteritems() function
+        Tuples/Lists of (keywork, value)
+        (keyword, value) as a tuple/list
+        keyworded arguments
     """
 
     fetched_functs = ['keys', 'values', 'items', 'iterkeys', 'iteritems',
@@ -115,14 +117,14 @@ class AttributeDict(object):
     def __getprop__(self, prop):
         """Return the value of a property. To be used in property getters"""
         try:
-            return self.__dict__['attrib'][prop]
+            return self.__dict__['_attribs'][prop]
         except KeyError:
             raise AttributeError
 
     def __delprop__(self, prop):
         """Delete a property. To be used in property deleters"""
         try:
-            del self.__dict__['attrib'][prop]
+            del self.__dict__['_attribs'][prop]
         except KeyError:
             raise AttributeError
 
