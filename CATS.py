@@ -19,7 +19,7 @@ from scipy.optimize import curve_fit
 from skimage.feature import blob_log
 from skimage.filters import gaussian_filter
 from skimage.transform import rotate
-from skimage import io
+from skimage import io, draw
 from time import time
 import networkx as nx
 from colorsys import hls_to_rgb
@@ -31,6 +31,7 @@ import pickle
 import tarfile
 from StringIO import StringIO
 import xml.etree.ElementTree as ET
+from copy import deepcopy
 
 
 class Parameters(AttributeDict):
@@ -59,11 +60,7 @@ class Parameters(AttributeDict):
             try:
                 if attr[0] == '_':
                     raise KeyError
-                # Avoid modifying the Defaults dict. Kind of a lame hack...
-                if isinstance(self._defaults[attr], AttributeDict):
-                    return self._defaults[attr].copy()
-                else:
-                    return self._defaults[attr]
+                return self._defaults[attr]
             except KeyError:
                 raise AttributeError(error)
 
@@ -85,6 +82,14 @@ class Parameters(AttributeDict):
                 return self._defaults[prop]
             else:
                 raise AttributeError('{0} not found.'.format(prop))
+
+    def copy(self):
+        """Copy Parameters object rather than whatever subclass."""
+        return Parameters(self.__dict__.copy())
+
+    def deepcopy(self):
+        """Deep copy Parameters object rather than whatever subclass."""
+        return Parameters(deepcopy(self.__dict__))
 
 
 class Dataset(Parameters):
@@ -228,7 +233,7 @@ class Dataset(Parameters):
         spots, pool = list(), Pool(self.max_processes)
         for blobs in pool.imap(find_blobs, iter((i, self.detection.blur, self.detection.threshold, j) for j, i in enumerate(self.source.read()))):
             if verbose is True:
-                print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4], time() - t), end='')
+                print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4] if len(blobs) > 0 else 'i', time() - t), end='')
                 stdout.flush()
             spots.extend(blobs)
         pool.close()
@@ -237,7 +242,7 @@ class Dataset(Parameters):
         # Save the spot list into memory
         if verbose is True:
             print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), self.source.length, time() - t))
-        self.spots = np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, int, int)}).view(np.recarray)
+        self.spots = np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, float, int)}).view(np.recarray)
         return spots
 
     def link_spots(self, verbose=True):
@@ -363,6 +368,19 @@ class Dataset(Parameters):
         """
         if output is None:
             images = list()
+
+        # Make colors
+        colors = [np.array(hls_to_rgb(randrange(0, 360) / 360, randrange(20, 80, 1) / 100, randrange(20, 80, 10) / 100)) * 255 for i in self.tracks]
+
+        # Separate tracks per image
+        if tracks is True and self.tracks is not None:
+            frames = [[] for f in range(self.source.length)]
+            for track, color in zip(self.get_tracks(), colors):
+                for s in track:
+                    spot = (int(s['y']), int(s['x']), int(s['s']), color)
+                    frames[s['t']].append(spot)
+
+        shape = self.source.dimensions[::-1]
         for t, image in enumerate(self.source.read()):
             # Prepare the output image (a 8bits RGB image)
             ni = np.zeros([3] + list(self.source.dimensions), dtype=np.uint8)
@@ -372,10 +390,14 @@ class Dataset(Parameters):
             # Mark spots
             if spots is True and self.spots is not None:
                 for s in (self.spots[i] for i in np.where(self.spots['t'] == t)[0]):
-                    ni[int(s['y']), int(s['x']), :] = (255, 0, 0)
+                    area = draw.circle_perimeter(int(s['y']), int(s['x']), int(s['s']), shape=shape)
+                    ni[area[0], area[1], :] = (255, 0, 0)
 
             # Mark tracks
-            # NOT YET IMPLEMENTED
+            if tracks is True and self.tracks is not None:
+                for s in frames[t]:
+                    area = draw.circle_perimeter(s[0], s[1], s[2], shape=shape)
+                    ni[area[0], area[1], :] = s[3]
 
             # Show/save image
             if output is None:
@@ -431,7 +453,7 @@ class Dataset(Parameters):
             t.append(spots[s])
         return t
 
-    def as_isbi_xml(self, f='result.xml', snr=7, density='low', scenario='VIRUS'):
+    def as_isbi_xml(self, f='result.xml', snr=7, density='low med high 100.0', scenario='NO_SCENARIO'):
         """Return tracks as ISBI 2012 Challenge XML for scoring."""
         root = ET.Element('root')
         t = ET.SubElement(root, 'TrackContestISBI2012')
@@ -441,8 +463,8 @@ class Dataset(Parameters):
             for spot in track:
                 s = ET.SubElement(p, 'detection')
                 s.attrib = {'t': str(spot['t']),
-                            'x': str(spot['x']),
-                            'y': str(spot['y']),
+                            'x': str(round(spot['x'], 2)),
+                            'y': str(round(spot['y'], 2)),
                             'z': '0'}
         E = ET.ElementTree(element=root)
         E.write(f)
@@ -503,7 +525,8 @@ def fit_gaussian_on_blobs(*args):
             else:
                 raise ValueError
         except:
-            spr_blobs.append(blob)
+            # spr_blobs.append(blob)
+            pass
 
     return spr_blobs
 
@@ -663,7 +686,7 @@ class Experiment(Parameters):
         if f is not None:
             with open(f, 'w') as data:
                 data.write(content)
-            self.file = f
+            self.file = os.path.abspath(f)
         return content if f is None else None
 
     def load(self, f=None):
@@ -679,12 +702,68 @@ class Experiment(Parameters):
         if os.path.isfile(f) is True:
             with open(f, 'r') as data:
                 E = pickle.load(data)
-            self.file = f
+            self.file = os.path.abspath(f)
         else:
             E = pickle.loads(f)
         self.__setprop__('sources', E.sources)
         self.__setprop__('datasets', E.datasets)
         self.update([i for i in E.__dict__.iteritems() if i[0] not in ('_attribs', 'sources', 'datasets')], E)
+
+    def detect_spots(self, verbose=True):
+        """Detect spots in each of the underlying datasets."""
+        t, n = time(), 0
+        for i, ds in enumerate(self.datasets):
+            if verbose is True:
+                print('\rWorking on dataset {0}'.format(i), end='\n')
+                stdout.flush()
+            ds.detect_spots(verbose)
+            n += len(ds.spots)
+        if verbose is True:
+            print('\rFound {0} spots in {1} datasets in {2:.2f}s:\n'.format(n, i + 1, time() - t), end='')
+            stdout.flush()
+
+    def link_spots(self, verbose=True):
+        """Link spots to form tracks in each of the underlying datasets."""
+        t, n = time(), 0
+        for i, ds in enumerate(self.datasets):
+            if verbose is True:
+                print('\rWorking on dataset {0}'.format(i), end='\n')
+                stdout.flush()
+            ds.link_spots(verbose)
+            n += len(ds.tracks)
+        if verbose is True:
+            print('\rFound {0} tracks in {1} datasets in {2:.2f}s:\n'.format(n, i + 1, time() - t), end='')
+            stdout.flush()
+
+    def filter(self, overwrite=True, parameters=None):
+        """Filter tracks in each of the underlying datasets."""
+        filtered_tracks = list()
+        for ds in self.datasets:
+            tracks = ds.filter(overwrite, parameters)
+            for track in tracks:
+                filtered_tracks.append(ds.export_track(track))
+        return filtered_tracks
+
+    def get_tracks(self, properties=None):
+        """
+        Return the tracks from each dataset of the experiment as a list of spot properties.
+
+        Arguments:
+            properties: list of the properties to return for each spots.
+
+        Will return the properties in the same order as given. If None, returns all properties.
+            x: the position, in x
+            y: the position, in y
+            s: the standard deviation of the gaussian kernel
+            i: the intensity at (x, y)
+            t: the frame
+        Example list: ['x', 'y', 't']
+        """
+        tracks = list()
+        for ds in self.datasets:
+            tracks.extend(ds.get_tracks(properties))
+        return tracks
+
 
 class OldExperiment(object):
 
@@ -882,60 +961,7 @@ class OldExperiment(object):
     def test_detection_conditions(self):  # NOT IMPLEMENTED YET
         """Find the optimal detection conditions in each of the underlying dataset."""
 
-    def find_spots(self, verbose=True):
-        """Detect spots in each of the underlying datasets."""
-        t, n = time(), 0
-        for i, ds in enumerate(self.datasets):
-            if verbose is True:
-                print('Working on dataset {0}:'.format(i))
-            ds.detect_spots(verbose)
-            n += len(ds.spots)
-        if verbose is True:
-            print('Found {0} spots in {1} datasets in {2:.2f}s:\n'.format(n, i + 1, time() - t))
-        return True
 
-    def link_spots(self, verbose=True):
-        """Link spots to form tracks in each of the underlying datasets."""
-        t, n = time(), 0
-        for i, ds in enumerate(self.datasets):
-            if verbose is True:
-                print('Working on dataset {0}:'.format(i))
-                stdout.flush()
-            ds.link_spots(verbose)
-            n += len(ds.tracks)
-        if verbose is True:
-            print('\rFound {0} tracks in {1} datasets in {2:.2f}s:\n'.format(n, i + 1, time() - t), end='')
-            stdout.flush()
-        return True
-
-    def filter(self, overwrite=True, parameters=None):
-        """Filter tracks in each of the underlying datasets."""
-        filtered_tracks = list()
-        for ds in self.datasets:
-            tracks = ds.filter(overwrite, parameters)
-            for track in tracks:
-                filtered_tracks.append(ds.export_track(track))
-        return filtered_tracks
-
-    def get_tracks(self, properties=None):
-        """
-        Return the tracks from each dataset of the experiment as a list of spot properties.
-
-        Arguments:
-            properties: list of the properties to return for each spots.
-
-        Will return the properties in the same order as given. If None, returns all properties.
-            x: the position, in x
-            y: the position, in y
-            s: the standard deviation of the gaussian kernel
-            i: the intensity at (x, y)
-            t: the frame
-        Example list: ['x', 'y', 't']
-        """
-        tracks = list()
-        for ds in self.datasets:
-            tracks.extend(ds.get_tracks(properties))
-        return tracks
 
     def find_barriers(self, datasets=None, overwrite=True):
         """

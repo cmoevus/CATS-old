@@ -279,11 +279,11 @@ class ROI(Images):
         return self.source
 
     def __getstate__(self):
-        """Do not inherit Images.__getstate__()."""
+        """Return state. Do not inherit Images.__getstate__."""
         return self.__dict__
 
     def __setstate__(self, state):
-        """Do not inherit Images.__setstate__()."""
+        """Set state. Do not inherit Images.__setstate__."""
         for k, v in state.iteritems():
             setattr(self, k, v)
 

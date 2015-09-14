@@ -115,23 +115,21 @@ class AttributeDict(object):
         self.__dict__['_attribs'][prop] = value
 
     def __getprop__(self, prop):
-        """Return the value of a property. To be used in property getters"""
+        """Return the value of a property. To be used in property getters."""
         try:
             return self.__dict__['_attribs'][prop]
         except KeyError:
             raise AttributeError
 
     def __delprop__(self, prop):
-        """Delete a property. To be used in property deleters"""
+        """Delete a property. To be used in property deleters."""
         try:
             del self.__dict__['_attribs'][prop]
         except KeyError:
             raise AttributeError
 
     def update(self, *args, **kwargs):
-        """
-        Update the object with the given list/object.
-        """
+        """Update the object with the given list/object."""
         # Import dicts, lists and pairs
         for d in args:
             if 'iteritems' in dir(d) or isinstance(d, AttributeDict):
