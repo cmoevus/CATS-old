@@ -42,7 +42,12 @@ Experiment = AttributeDict({
         'blur': 2,  # Blurring for diminishing the effect of noise.
         'guess': True,  # Guess the position of barriers when there
                         # expected but not present
-        'tlims': None  # The frames to use for finding the barriers.
-                       # If None, uses the main tlims
+        'tlims': None
     },
+})
+
+Images = AttributeDict({
+    'barrier_detection': {
+        'frames': None,  # The frames to use for finding the barriers. If None, uses all the images.
+    }
 })

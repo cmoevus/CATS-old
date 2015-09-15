@@ -14,12 +14,12 @@ import os
 import numpy as np
 from numpy import ma
 from matplotlib import pyplot as plt
-from scipy import ndimage, misc
+from scipy import ndimage
 from scipy.optimize import curve_fit
 from skimage.feature import blob_log
 from skimage.filters import gaussian_filter
 from skimage.transform import rotate
-from skimage import io, draw
+from skimage import io, draw, exposure
 from time import time
 import networkx as nx
 from colorsys import hls_to_rgb
@@ -32,6 +32,7 @@ import tarfile
 from StringIO import StringIO
 import xml.etree.ElementTree as ET
 from copy import deepcopy
+from collections import Counter
 
 
 class Parameters(AttributeDict):
@@ -47,8 +48,7 @@ class Parameters(AttributeDict):
 
     def __init__(self, *args, **kwargs):
         """Call parent class. Add support for defaults."""
-        if '_defaults' not in kwargs:
-            self._defaults = AttributeDict()
+        self._defaults = AttributeDict() if '_defaults' not in kwargs else kwargs['_defaults']
         AttributeDict.__init__(self, *args, **kwargs)
 
     def __getattr__(self, attr):
@@ -60,14 +60,14 @@ class Parameters(AttributeDict):
             try:
                 if attr[0] == '_':
                     raise KeyError
-                return self._defaults[attr]
+                return self._defaults[attr] if not isinstance(self._defaults[attr], AttributeDict) else self._defaults[attr].copy()
             except KeyError:
                 raise AttributeError(error)
 
     def __setattr__(self, attr, value):
         """Call parent class. Add support for defaults."""
         # Transform all subdicts into same class, with proper defaults
-        if type(value) is dict:
+        if attr != '_defaults' and type(value) is dict:
             d = self._defaults[attr] if attr in self._defaults else AttributeDict()
             AttributeDict.__setattr__(self, attr, Parameters(_defaults=d, **value))
         else:
@@ -85,11 +85,11 @@ class Parameters(AttributeDict):
 
     def copy(self):
         """Copy Parameters object rather than whatever subclass."""
-        return Parameters(self.__dict__.copy())
+        return Parameters(**self.__dict__.copy())
 
     def deepcopy(self):
         """Deep copy Parameters object rather than whatever subclass."""
-        return Parameters(deepcopy(self.__dict__))
+        return Parameters(**deepcopy(self.__dict__))
 
 
 class Dataset(Parameters):
@@ -207,10 +207,12 @@ class Dataset(Parameters):
         D.source.x, D.source.y, D.source.t = self.source.x, self.source.y, (frame, frame + 1)
         D.detection = kwargs
         D.detect_spots()
-        images = D.draw(output)
+        images = D.draw(output=None)
         if output is None:
             io.imshow(images[0], cmap=plt.cm.gray)
             io.show()
+        else:
+            io.imsave(output, images[0])
         if save == True:
             self.detection = kwargs
         return D.spots
@@ -357,33 +359,53 @@ class Dataset(Parameters):
 
         return n_tracks
 
-    def draw(self, output=None, spots=True, tracks=True):
+    def draw(self, output=None, spots=None, tracks=True, rescale=True):
         """
         Draw the tracks and/or spots onto the images of the dataset as RGB images.
 
         Argument:
             output: the directory in which to write the files. If None, returns the images as a list of arrays.
-            spots: if present, marks the spots on the images with a red dot at their center.
-            tracks: if present, marks the tracks on the images with a colored dot at the center of each of their spots. All spots within the same track will have the same color.
+            spots: if True, surrounds the spots on the images with a red circle. If None, only show spots if no tracks are available.
+            tracks: if present, surround each of the spots in the tracks on the images with a colored circle. All spots within the same track will have the same color.
+            rescale: adjust intensity levels to the detected content
         """
         if output is None:
             images = list()
 
-        # Make colors
-        colors = [np.array(hls_to_rgb(randrange(0, 360) / 360, randrange(20, 80, 1) / 100, randrange(20, 80, 10) / 100)) * 255 for i in self.tracks]
+        if spots is None and self.tracks is None:
+            spots = True
 
         # Separate tracks per image
         if tracks is True and self.tracks is not None:
+            # Make colors
+            colors = [np.array(hls_to_rgb(randrange(0, 360) / 360, randrange(20, 80, 1) / 100, randrange(20, 80, 10) / 100)) * 255 for i in self.tracks]
             frames = [[] for f in range(self.source.length)]
             for track, color in zip(self.get_tracks(), colors):
+                sigma = int(np.mean([s['s'] for s in track]))
                 for s in track:
-                    spot = (int(s['y']), int(s['x']), int(s['s']), color)
+                    spot = (int(s['y']), int(s['x']), sigma, color)
                     frames[s['t']].append(spot)
+
+        # Calculate intensity range:
+        if rescale == True:
+            if tracks is True and self.tracks is not None:
+                i = [i for t in self.get_tracks('i') for i in t]
+            elif spots is True and self.spots is not None:
+                i = [s['i'] for s in self.spots]
+            if len(i) != 0:
+                m, s = np.mean(i), np.std(i)
+                scale = (m - 3 * s, m + 3 * s)
+            else:
+                scale = False
 
         shape = self.source.dimensions[::-1]
         for t, image in enumerate(self.source.read()):
             # Prepare the output image (a 8bits RGB image)
-            ni = np.zeros([3] + list(self.source.dimensions), dtype=np.uint8)
+            ni = np.zeros([3] + list(self.source.dimensions[::-1]), dtype=np.uint8)
+
+            if rescale is True and scale is not False:
+                image = exposure.rescale_intensity(image, in_range=scale)
+
             ni[..., :] = image / image.max() * 255
             ni = ni.transpose(1, 2, 0)
 
@@ -472,10 +494,10 @@ class Dataset(Parameters):
 
 def find_blobs(*args):
     """
-    Finds blobs in an image. Returns a list of spots as (y, x, s, i),
-    where y and x are the locations of the center, s is the standard
-    deviation of the gaussian kernel and i is the intensity at the
-    center.
+    Find blobs in an image. Return a list of spots as (y, x, s, i).
+
+    List of spots:
+    y and x are the locations of the center, s is the standard deviation of the gaussian kernel and i is the intensity at the center.
 
     Arguments:  (as a list, for multiprocessing)
         image: a numpy array representing the image to analyze
@@ -510,8 +532,8 @@ def fit_gaussian_on_blobs(*args):
         try:
             r = blob[2] + 1 * np.sqrt(2)
             ylims, xlims = img.shape
-            y = (max(0, int(floor(blob[1] - r))), min(int(ceil(blob[1] + r)) + 1, xlims))
-            x = (max(0, int(floor(blob[0] - r))), min(int(ceil(blob[0] + r)) + 1, ylims))
+            y = (max(0, int(floor(blob[1] - r))), min(int(ceil(blob[1] + r)) + 1, ylims))
+            x = (max(0, int(floor(blob[0] - r))), min(int(ceil(blob[0] + r)) + 1, xlims))
             data = img[y[0]:y[1], x[0]:x[1]]
             coords = np.meshgrid(np.arange(data.shape[0]), np.arange(data.shape[1]))
 
@@ -764,6 +786,151 @@ class Experiment(Parameters):
             tracks.extend(ds.get_tracks(properties))
         return tracks
 
+    def find_barriers(self, datasets=None, overwrite=True):
+        """
+        Find the barriers in an experiment.
+
+        NEED TO IMPLEMENT:
+            - IMCOMPLETE BARRIER SETS
+
+        Arguments:
+            datasets: list of the ids of the datasets to find barriers in. If None, tries all datasets
+            overwrite: bool. If True, the given datasets will be replaced by one dataset for each set of their barriers.
+        """
+        barrier_datasets = list()
+        if datasets is None:
+            datasets = range(len(self.datasets))
+        for ds in datasets:
+            ds = self.datasets[ds]
+            dbp, dbb = self.barriers.dbp, self.barriers.dbb
+            approx = self.barrier_detection.approx
+
+            # Make a projection of the image
+            d_tlims = ds.barrier_detection.tlims
+            ds.images.tlims = d_tlims if d_tlims is not None else ds.tlims
+            img = np.zeros(ds.images.dimensions()[::-1])
+            for i in ds.images.read():
+                img += i
+            ds.images.tlims = ds.tlims
+            img = gaussian_filter(img, self.barrier_detection.blur)
+            axis = 0 if self.barriers.axis == 'y' else 1
+            projection = np.sum(img, axis=axis)
+
+            # Find peaks
+            d_proj = np.diff(projection)
+            tangents = list()
+            for i in range(0, len(d_proj) - 1):
+                neighbors = sorted((d_proj[i], d_proj[i + 1]))
+                if neighbors[0] < 0 and neighbors[1] > 0:
+                    tangents.extend([i])
+            extremas = np.where(np.square(np.diff(d_proj)) - np.square(d_proj[:-1]) >= 0)[0]
+            peaks = sorted([p for p in tangents if p in extremas])
+            distances = np.subtract.outer(peaks, peaks)
+
+            # Build sets of barriers
+            max_sets = int(ceil(len(projection) - dbp) / dbb) + 1
+            exp_dists, sets = [dbp], list()
+            for i in range(1, max_sets):
+                exp_dists.extend([i * dbb - dbp, i * dbb])
+
+            # Find the best possible match for consecutive barriers-pedestals
+            # for each peak
+            for peak in range(distances.shape[0]):
+                i = 0  # Position in the sets of barriers
+                j, last_j = 0, -1  # Distance with last peak
+                barriers_set, current_set = list(), list()
+                a = 0  # Allowed difference for ideal distance
+                while i < max_sets and j < len(exp_dists):
+
+                    # Update the distances to search at
+                    if j != last_j:
+                        search = [exp_dists[j]]
+                        for k in range(1, approx):
+                            search.extend([exp_dists[j] - k, exp_dists[j] + k])
+                        last_j = j
+
+                    # Try to find a pair
+                    match = np.where(distances[peak] == search[a])[0]
+                    if len(match) != 0:
+                        if j == 0:
+                            current_set = (peaks[peak], peaks[match[0]])
+                            barriers_set.append((current_set, a))
+                        else:
+                            i += j // 2 + 1
+                            if len(current_set) == 1:
+                                barriers_set.append((current_set, approx + 1))
+                            current_set = [match[0]]
+                        peak = match[0]
+                        j = 0 if j % 2 == 1 else 1
+                        a = 0
+
+                    # No pair found: look for it with more laxity
+                    else:
+                        a += 1
+
+                    # This pair does not exists in all permitted limits.
+                    # Look for next pair.
+                    if a == approx:
+                        a = 0
+                        j += 1
+
+                if len(barriers_set) > 0:
+                    sets.append(barriers_set)
+
+            set_scores = list()
+            for s in sets:
+                score = sum([n[1] for n in s])
+                set_scores.append((len(s), -score))
+            if 'barriers' not in self:
+                self.barriers = {}
+            self.barriers.positions = sorted([sorted(n[0]) for n in sets[set_scores.index(sorted(set_scores, reverse=True)[0])]])
+
+            # Transform barrier sets into datasets
+            for barrier_set in self.barriers.positions:
+                b_ds = Dataset()
+                b_ds.update(ds)
+                lims = 'xlims' if self.barriers.axis == 'y' else 'ylims'
+                if self.barriers.orientation == 'pb':
+                    barrier_set = barrier_set[::-1] + [-1]
+                setattr(b_ds, lims, barrier_set)
+                barrier_datasets.append(b_ds)
+
+        # Overwrite previous datasets if required
+        if overwrite is True:
+            for ds in datasets:
+                del self.datasets[ds]
+            self.datasets.extend(barrier_datasets)
+
+        return barrier_datasets
+
+    def histogram(self, prop='x', binsize=3):
+        """
+        Draw an histogram of the given property.
+
+        Arguments:
+            prop: any spot property (x, y, s, t, i) or 'l', for length of tracks.
+            binsize: number of pixels/units per bin.
+        """
+        if prop == 'l':
+            tracks = self.get_tracks('t')
+            data = [max(track) - min(track) for track in tracks]
+        else:
+            tracks = self.get_tracks(prop)
+            data = [np.mean(track) for track in tracks]
+        bins = int(ceil((max(data) - min(data)) / binsize))
+        return plt.hist(data, bins=bins)
+
+    def survival_plot(self):
+        """Return a survival plot."""
+        tracks = self.get_tracks('t')
+        data = Counter([(max(track) - min(track)) / self.framerate for track in tracks if max(track) != self.source.length - 1])
+        x, y, n, lost = list(), list(), len(tracks), 0
+        for t, tn in sorted(data.items()):
+            lost += tn
+            x.append(t)
+            y.append(n - lost)
+        return x, y
+
 
 class OldExperiment(object):
 
@@ -965,7 +1132,7 @@ class OldExperiment(object):
 
     def find_barriers(self, datasets=None, overwrite=True):
         """
-        Finds the barriers in an experiment.
+        Find the barriers in an experiment.
 
         NEED TO IMPLEMENT:
             - IMCOMPLETE BARRIER SETS
@@ -1164,74 +1331,13 @@ class OldExperiment(object):
 
         return bins, y
 
-    def histogram(self, prop='x', binsize=3):
-        """
-        Draw an histogram of the given property.
 
-        Arguments:
-            prop: any spot property (x, y, s, t, i) or 'l', for length of tracks.
-            binsize: number of pixels/units per bin.
-        """
-        if prop == 'l':
-            tracks = self.get_tracks('t')
-            data = [max(track) - min(track) for track in tracks]
-        else:
-            tracks = self.get_tracks(prop)
-            data = [np.mean(track) for track in tracks]
-        bins = int(ceil((max(data) - min(data)) / binsize))
-        plt.hist(data, bins=bins)
-        plt.show()
 
 
 def gaussian_2d(coords, A, x0, y0, s):
     """Draw a 2D gaussian with given properties."""
     x, y = coords
     return (A * np.exp(((x - x0)**2 + (y - y0)**2) / (-2 * s**2))).ravel()
-
-
-def draw_tracks(tracks, spots, d, destination, draw_spots=False):
-    n_frames = np.array(spots, dtype=int)[:, 3].max() + 1
-
-    # Make colors
-    colors = [np.array(hls_to_rgb(randrange(0, 360) / 360, randrange(20, 80, 1) / 100, randrange(20, 80, 10) / 100)) * 255 for i in tracks]
-
-    # Separate tracks per image, because memory is short
-    frames = [[] for f in range(n_frames)]
-    i = 0
-    for track in tracks:
-        for s in track:
-            s = spots[s]
-            spot = list(s[:2])
-            spot.extend(colors[i])
-            frames[s[3]].append(spot)
-        i += 1
-
-    # Draw all spots
-    if draw_spots is True:
-        used = set([spot for track in tracks for spot in track])
-        unused = used.symmetric_difference(range(0, len(spots)))
-        for s in unused:
-            s = spots[s]
-            spot = list(s[:2])
-            spot.extend([255, 0, 0])
-            frames[s[3]].append(spot)
-
-    # Write tracks RGB images
-    j = 0
-    for f in sorted(os.listdir(d)):
-
-        # Make images RGB
-        i = io.imread(d + '/' + f)
-        shape = list(i.shape)
-        ni = np.zeros([3] + shape)
-        ni[..., :] = i / i.max() * 255
-        ni = ni.transpose(1, 2, 0)
-
-        # Write spots
-        for s in frames[j]:
-            ni[s[1], s[0], :] = s[2:]
-        misc.imsave(os.path.normpath(destination) + '/' + str(j) + '.tif', ni)
-        j += 1
 
 
 # Draws a histogram of position on DNA
