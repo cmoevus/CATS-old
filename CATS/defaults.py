@@ -6,9 +6,10 @@ from __future__ import division
 from __future__ import print_function
 # from __future__ import unicode_literals
 from multiprocessing import cpu_count
-from AttributeDict import AttributeDict
+from CATS.attrdict import AttrDict
+__all__ = ['Experiment', 'Images']
 
-Experiment = AttributeDict({
+Experiment = AttrDict({
     'xlims': (0, None),
     'ylims': (0, None),
     'tlims': (0, None),
@@ -46,7 +47,7 @@ Experiment = AttributeDict({
     },
 })
 
-Images = AttributeDict({
+Images = AttrDict({
     'barrier_detection': {
         'frames': None,  # The frames to use for finding the barriers. If None, uses all the images.
     }
