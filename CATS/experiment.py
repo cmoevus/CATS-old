@@ -7,9 +7,9 @@ from __future__ import print_function
 # numpy's record arrays do not work with future unicode_literals
 # from __future__ import unicode_literals
 
-from CATS.parameters import Parameters
-from CATS.sources import Images, ROI, globify
-from CATS import defaults
+from .parameters import Parameters
+from .sources import Images, ROI, globify
+from . import defaults
 import os
 import numpy as np
 from numpy import ma
@@ -31,8 +31,17 @@ import pickle
 import tarfile
 from StringIO import StringIO
 import xml.etree.ElementTree as ET
-from collections import Counter
+import importlib
 __all__ = ['Dataset', 'Experiment']
+
+
+def analysis__methods(Class):
+    """Decorate given class with functions from the analysis module."""
+    analysis = importlib.import_module('CATS.analysis')
+    for func in analysis.__all__:
+        setattr(Class, func, getattr(analysis, func))
+    return Class
+
 
 class Dataset(Parameters):
 
@@ -434,6 +443,7 @@ class Dataset(Parameters):
         E.write(f)
 
 
+@analysis__methods
 class Experiment(Parameters):
 
     """
@@ -469,6 +479,16 @@ class Experiment(Parameters):
                 self.add_dataset(args[0])
                 del[args[0]]
         self.update(*args, **kwargs)
+
+    def __getattr__(self, attr):
+        """Support analysis functions from the analysis plugin module."""
+        try:
+            return Parameters.__getattr__(self, attr)
+        except AttributeError:
+            try:
+                return analysis[attr]
+            except KeyError:
+                return AttributeError('{0} not found.'.format(attr))
 
     @property
     def sources(self):
@@ -800,17 +820,6 @@ class Experiment(Parameters):
             data = [np.mean(track) for track in tracks]
         bins = int(ceil((max(data) - min(data)) / binsize))
         return plt.hist(data, bins=bins)
-
-    def survival_plot(self):
-        """Return a survival plot."""
-        tracks = self.get_tracks('t')
-        data = Counter([(max(track) - min(track)) / self.framerate for track in tracks if max(track) != self.source.length - 1])
-        x, y, n, lost = list(), list(), len(tracks), 0
-        for t, tn in sorted(data.items()):
-            lost += tn
-            x.append(t)
-            y.append(n - lost)
-        return x, y
 
 
 class OldExperiment(object):
@@ -1274,38 +1283,6 @@ def gaussian_2d(coords, A, x0, y0, s):
     """Draw a 2D gaussian with given properties."""
     x, y = coords
     return (A * np.exp(((x - x0)**2 + (y - y0)**2) / (-2 * s**2))).ravel()
-
-
-def zhi_plot(tracks, spots):
-    fps = 1 / 0.06
-    binsize = int(ceil(1000 / fps))
-    exp_len = int(ceil(10000 / fps))
-
-    bins = [[] for t in range(0, exp_len, binsize)]
-    for track in tracks:
-        frames = [spots[s][3] for s in track]
-        m = min(frames)
-        dt = (max(frames) - m) / fps
-        bins[int(floor((m / fps) / binsize))].append(dt)
-
-    # All the dwell times
-    xs = list()
-    ys = list()
-    for i, b in enumerate(bins):
-        xs.extend([i * binsize for d in b])
-        ys.extend(b)
-    plt.plot(xs, ys, 'g.', label='Calculated dwell times')
-
-    # Mean dwell tims
-    y = [np.mean(b) for b in bins]
-    x = range(0, exp_len, binsize)
-    plt.plot(x, y, 'ro', label='Mean dwell time: {0:.2f}s'.format(np.mean(ys)))
-    plt.ylabel('Mean dwell time (s)')
-    plt.yscale('log')
-    plt.xlabel('Binned time of initial binding (s)')
-    plt.legend()
-    plt.figtext(0.82, 0.12, 'N={0}'.format(len(tracks)))
-    plt.savefig('150720. Dwell time vs initial binding time.png')
 
 
 def transitive_reduction(G, order=None, adj_matrix=False):
