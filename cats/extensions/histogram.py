@@ -1,7 +1,7 @@
 from matplotlib import pyplot as plt
 import numpy as np
 from math import ceil
-__all__ = ['histogram']
+__cats__ = {'target': 'Experiment'}
 
 
 def histogram(self, prop='x', binsize=3):

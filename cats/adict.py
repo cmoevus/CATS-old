@@ -43,13 +43,12 @@ class adict(object):
         keyworded arguments
     """
 
-    fetched_functs = ['keys', 'values', 'items', 'iterkeys', 'iteritems',
-                      'itervalues', '__iter__']
-
     def __init__(self, *args, **kwargs):
         """Set up the attribute dict and values."""
         self.__dict__['_attribs'] = dict()
         self.update(*args, **kwargs)
+        for f in ['keys', 'values', 'items', 'iterkeys', 'iteritems', 'itervalues', '__iter__']:
+            object.__setattr__(self, f, getattr(self.__dict__['_attribs'], f))
 
     def __getattr__(self, attr):
         """Return a fetched function, an attribute-item or an error."""
@@ -70,20 +69,15 @@ class adict(object):
         - Prevents from overwriting fetched functions
         - Transforms all subdicts into objects of the same type as this one
         """
-        if attr in self.fetched_functs:
-            # Prevent from blocking the read-only attributes from __dict__
-            e = 'object attribute {0} is read-only'.format(attr)
-            raise AttributeError(e)
-        else:
-            # Transform all subdicts into same type as self
-            if type(value) is dict:
-                value = type(self)(**value)
+        # Transform all subdicts into same type as self
+        if type(value) is dict:
+            value = type(self)(**value)
 
-            # Put item in the right dict
-            if attr[0] == '_' or attr in dir(self):
-                object.__setattr__(self, attr, value)
-            else:
-                self.__dict__['_attribs'][attr] = value
+        # Put item in the right dict
+        if attr[0] == '_' or attr in dir(self):
+            object.__setattr__(self, attr, value)
+        else:
+            self.__dict__['_attribs'][attr] = value
 
     def __delattr__(self, attr):
         """Delete attribute, hidden or not."""

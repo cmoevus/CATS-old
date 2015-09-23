@@ -1,6 +1,6 @@
 # -*- coding: utf8 -*-
 from collections import Counter
-__all__ = ['survival_plot']
+__cats__ = {'target': 'Experiment'}
 
 
 def survival_plot(self):

@@ -10,8 +10,7 @@ from __future__ import print_function
 from .adict import dadict
 from .sources import Images, ROI, globify
 from . import defaults
-from . import detection
-from . import linkage
+from . import extensions
 import os
 import numpy as np
 from matplotlib import pyplot as plt
@@ -27,19 +26,11 @@ from multiprocessing import Pool
 from sys import stdout
 import pickle
 import xml.etree.ElementTree as ET
-import importlib
 __all__ = ['Dataset', 'Experiment']
 
 
-def analysis__methods(Class):
-    """Decorate given class with functions from the analysis module."""
-    analysis = importlib.import_module('CATS.analysis')
-    for func in analysis.__all__:
-        setattr(Class, func, getattr(analysis, func))
-    return Class
-
-
-class Dataset(Parameters):
+@extensions.append
+class Dataset(dadict):
 
     """
     A dataset is a collection of data that have the same experimental condition.
@@ -214,7 +205,7 @@ class Dataset(Parameters):
 
         Argument
             overwrite: bool. If True, the Dataset's tracks will be replaced by the filtered ones.
-            parameters: dict. Parameters to use for filtering. If None, will use the ones from the Dataset's parameters (Dataset.filtration).
+            parameters: dict. dadict to use for filtering. If None, will use the ones from the Dataset's parameters (Dataset.filtration).
         """
         if parameters is None:
             parameters = self.filtration
@@ -365,8 +356,8 @@ class Dataset(Parameters):
         E.write(f)
 
 
-@analysis__methods
-class Experiment(Parameters):
+@extensions.append
+class Experiment(dadict):
 
     """
     Representation of a single-molecule experiment.
@@ -389,7 +380,7 @@ class Experiment(Parameters):
 
     def __init__(self, *args, **kwargs):
         """Load given sources and arguments."""
-        super(Parameters, self).__init__(_defaults=defaults.Experiment)
+        super(dadict, self).__init__(_defaults=defaults.Experiment)
         self.__setprop__('sources', [])
         self.__setprop__('datasets', [])
         args = list(args)

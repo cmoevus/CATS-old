@@ -15,8 +15,10 @@ import javabridge
 import bioformats
 import os
 from skimage import io
+from . import extensions
 
 
+@extensions.append
 class Images(object):
     #
     # Make sure to update Experiment's sources/datasets function when this inherits from AttributeDict, to deal with the __iter__...
@@ -168,6 +170,7 @@ class Images(object):
             self.dormant = True
 
 
+@extensions.append
 class ROI(Images):
 
     """

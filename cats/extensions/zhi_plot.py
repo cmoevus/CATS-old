@@ -1,10 +1,11 @@
 from matplotlib import pyplot as plt
 import numpy as np
 from math import floor, ceil
-__all__ = ['zhi_plot']
+__cats__ = {'target': 'Experiment'}
 
 
 def zhi_plot(self):
+    """Plot lifetime against time of initial binding."""
     binsize = int(ceil(self.source.length / (10 * self.framerate)))
     exp_len = int(ceil(self.source.length / self.framerate))
 

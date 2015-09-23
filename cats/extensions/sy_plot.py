@@ -1,12 +1,11 @@
 from matplotlib import pyplot as plt
 from math import ceil
 import numpy as np
-__all__ = ['sy_plot']
+__cats__ = {'target': 'Experiment'}
 
 
 def sy_plot(self, binsize=3):
     """Draw a SY (Stacked Ys) plot based on the tracks."""
-
     # Define the limits in X
     lims = (0, max([s for t in self.get_tracks('x') for s in t]))
 
