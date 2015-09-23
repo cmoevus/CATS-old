@@ -1,6 +1,5 @@
 # -*- coding: utf8 -*-
 from collections import Counter
-__cats__ = {'target': 'Experiment'}
 
 
 def survival_plot(self):
@@ -13,3 +12,5 @@ def survival_plot(self):
         x.append(t)
         y.append(n - lost)
     return x, y
+
+__extension__ = {'Experiment': {'survival_plot': survival_plot}}

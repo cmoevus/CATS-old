@@ -1,7 +1,6 @@
 from matplotlib import pyplot as plt
 import numpy as np
 from math import floor, ceil
-__cats__ = {'target': 'Experiment'}
 
 
 def zhi_plot(self):
@@ -35,3 +34,5 @@ def zhi_plot(self):
     plt.legend()
     plt.figtext(0.82, 0.12, 'N={0}'.format(len(tracks)))
     plt.savefig('zhi_plot.png')
+
+__extension__ = {'Experiment': {'zhi_plot': zhi_plot}}

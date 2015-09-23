@@ -1,7 +1,6 @@
 from matplotlib import pyplot as plt
 from math import ceil
 import numpy as np
-__cats__ = {'target': 'Experiment'}
 
 
 def sy_plot(self, binsize=3):
@@ -54,3 +53,5 @@ def sy_plot(self, binsize=3):
     plt.close()
 
     return bins, y
+
+__extension__ = {'Experiment': {'sy_plot': sy_plot}}

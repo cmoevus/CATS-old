@@ -1,7 +1,6 @@
 from matplotlib import pyplot as plt
 import numpy as np
 from math import ceil
-__cats__ = {'target': 'Experiment'}
 
 
 def histogram(self, prop='x', binsize=3):
@@ -20,3 +19,5 @@ def histogram(self, prop='x', binsize=3):
         data = [np.mean(track) for track in tracks]
     bins = int(ceil((max(data) - min(data)) / binsize))
     return plt.hist(data, bins=bins)
+
+__extension__ = {'Experiment': {'histogram': histogram}}
