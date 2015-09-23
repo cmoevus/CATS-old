@@ -6,15 +6,15 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 from copy import deepcopy
-__all__ = ['AttrDict']
+__all__ = ['adict', 'dadict']
 
 
-class AttrDict(object):
+class adict(object):
 
     """
     Dictionary-like object that allow to access items as an object's attributes.
 
-    AttrDicts allow to add getters and setters on items, as well as to access them through AttrDict.key or AttrDict['key']. It can be used as a dictionary for enumerating items (as in **kwargs or in for loops). It supports hidden items (keys starting with '_') that do not appear in the item listings.
+    adicts allow to add getters and setters on items, as well as to access them through adict.key or adict['key']. It can be used as a dictionary for enumerating items (as in **kwargs or in for loops). It supports hidden items (keys starting with '_') that do not appear in the item listings.
 
     How to write getters/setters:
 
@@ -112,7 +112,7 @@ class AttrDict(object):
             return self.__getattr__(key)
 
     def __contains__(self, key):
-        """Look if the AttrDict has an item, hidden or not."""
+        """Look if the adict has an item, hidden or not."""
         if key[0] == '_':
             return key in self.__dict__
         else:
@@ -140,7 +140,7 @@ class AttrDict(object):
         """Update the object with the given list/object."""
         # Import dicts, lists and pairs
         for d in args:
-            if 'iteritems' in dir(d) or isinstance(d, AttrDict):
+            if 'iteritems' in dir(d) or isinstance(d, adict):
                 d = d.iteritems()
             elif '__iter__' not in dir(d[0]):
                 d = (d, )
@@ -151,10 +151,67 @@ class AttrDict(object):
             setattr(self, k, v)
 
     def copy(self):
-        """"Copy the AttrDict object a la dict.copy."""
+        """"Copy the adict object a la dict.copy."""
         return type(self)(self.__dict__.copy())
 
     def deepcopy(self):
-        """"Recursively copy the AttrDict object so that no reference to the original object is left."""
+        """"Recursively copy the adict object so that no reference to the original object is left."""
         d = deepcopy(self.__dict__)
         return type(self)(d)
+
+
+class dadict(adict):
+
+    """
+    Attribute dictionary that also support default values.
+
+    dadict's copy and deepcopy functions, unlike adict's, do not consider the subclasses' type. All classes inheriting copy and deepcopy from dadict will return a dadict object with copy() or deepcopy().
+
+    Keyword arguments:
+        _defaults: (dict/adict) the object to fetch values from if they do not exist in this object.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Call parent class. Add support for defaults."""
+        self._defaults = adict() if '_defaults' not in kwargs else kwargs['_defaults']
+        adict.__init__(self, *args, **kwargs)
+
+    def __getattr__(self, attr):
+        """Call parent class. Add support for defaults."""
+        error = '{0} not found'.format(attr)
+        try:
+            return adict.__getattr__(self, attr)
+        except AttributeError:
+            try:
+                if attr[0] == '_':
+                    raise KeyError
+                return self._defaults[attr] if not isinstance(self._defaults[attr], adict) else self._defaults[attr].copy()
+            except KeyError:
+                raise AttributeError(error)
+
+    def __setattr__(self, attr, value):
+        """Call parent class. Add support for defaults."""
+        # Transform all subdicts into same class, with proper defaults
+        if attr != '_defaults' and type(value) is dict:
+            d = self._defaults[attr] if attr in self._defaults else adict()
+            adict.__setattr__(self, attr, dadict(_defaults=d, **value))
+        else:
+            adict.__setattr__(self, attr, value)
+
+    def __getprop__(self, prop):
+        """Call parent class. Add support for defaults."""
+        try:
+            return adict.__getprop__(self, prop)
+        except AttributeError:
+            if prop in self._defaults:
+                return self._defaults[prop]
+            else:
+                raise AttributeError('{0} not found.'.format(prop))
+
+    def copy(self):
+        """Copy to dadict object rather than whatever subclass."""
+        return dadict(**self.__dict__.copy())
+
+    def deepcopy(self):
+        """Deep copy to dadict object rather than whatever subclass."""
+        return dadict(**deepcopy(self.__dict__))

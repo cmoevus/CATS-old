@@ -6,14 +6,10 @@ from __future__ import division
 from __future__ import print_function
 # from __future__ import unicode_literals
 from multiprocessing import cpu_count
-from CATS.attrdict import AttrDict
+from .adict import adict
 __all__ = ['Experiment', 'Images']
 
-Experiment = AttrDict({
-    'xlims': (0, None),
-    'ylims': (0, None),
-    'tlims': (0, None),
-    'channel': 0,
+Experiment = adict({
     'max_processes': cpu_count(),
     'linkage': {
         'method': 'lame',  # The method to use from the linkage module
@@ -23,6 +19,7 @@ Experiment = AttrDict({
     },
     'detection': {
         'method': 'lame',  # The method to use from the detection module
+        'keep_unfit': True,  # Keep the spots even if a Gaussian could not be fitted on them (no sub-pixel resolution)
     },
     'filtration': {
         'min_length': 3,  # Minimum number of frames to keep a track
@@ -38,7 +35,7 @@ Experiment = AttrDict({
     },
 })
 
-Images = AttrDict({
+Images = adict({
     'barrier_detection': {
         'frames': None,  # The frames to use for finding the barriers. If None, uses all the images.
     },
