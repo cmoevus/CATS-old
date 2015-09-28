@@ -11,19 +11,13 @@ __all__ = ['Experiment', 'Images']
 
 Experiment = adict({
     'max_processes': cpu_count(),
-    'linkage': {
-        'method': 'lame',  # The method to use from the linkage module
+    'particles': {
+        'find': 'stable_particles',  # The method to use from the linkage module
         'max_disp': (2, 2),  # Maximum displacement, in pixels
         'max_blink': 25,  # Maximum blinking, in frames
-        'ambiguous_tracks': True,  # Should we keep and try to solve ambiguous tracks?
-    },
-    'detection': {
-        'method': 'lame',  # The method to use from the detection module
-        'keep_unfit': True,  # Keep the spots even if a Gaussian could not be fitted on them (no sub-pixel resolution)
-    },
-    'filtration': {
+        'keep_unfit': True,   # Keep the spots even if a Gaussian could not be fitted on them (no sub-pixel resolution)
         'min_length': 3,  # Minimum number of frames to keep a track
-        'max_length': None,  # The maximum number of frames to keep a track
+        'max_length': None,   # The maximum number of frames to keep a track
         'mean_blink': 5,  # The mean number of frames between two spots to keep a track
     },
     'barriers': {
@@ -31,8 +25,8 @@ Experiment = adict({
         'dbp': 47,  # Distance between the barriers and the pedestals in pixels
         'dbb': 139,  # Distance between two sets of barriers, in pixels
         'axis': 'y',  # The axis of the image with which the barriers are parallel. Either 'x' or 'y'
-        'orientation': 'bp'  # The order of appearance of barriers and pedestals, from the left. bp: barrier, then pedestals. pb: pedestals, then barriers
-    },
+        'orientation': 'bp',  # The order of appearance of barriers and pedestals, from the left. bp: barrier, then pedestals. pb: pedestals, then barriers
+    }
 })
 
 Images = adict({

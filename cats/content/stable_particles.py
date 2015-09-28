@@ -1,13 +1,71 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+
+from sys import stdout
+from time import time
+from multiprocessing import Pool
 import numpy as np
+from numpy import ma
 from skimage.feature import blob_log
 from scipy import ndimage
 from scipy.optimize import curve_fit
 from math import floor, ceil
-__all__ = ['find_blobs', 'fit_gaussian_on_blobs']
-__detection__ = 'find_blobs'
+import networkx as nx
+
+__all__ = ['find_stable_particles', 'detect_spots', 'find_blobs', 'fit_gaussian_on_blobs', 'link_spots', 'gaussian_2d']
+
+
+def find_stable_particles(self, **kwargs):
+    """
+    Find the spots on the Dataset's images.
+
+    Arguments:
+        blur: see ndimage.gaussian_filter()'s 'sigma' argument
+        threshold: see scipy.feature.blob_log()'s 'threshold' argument
+        max_blink: max number of frames a particle can 'disappear' before it is considered a different particle
+        max_disp: max distance (x, y) the particle can move between two frames before it is considered a different particle.
+        verbose: give information as it works
+
+    """
+    if 'particles' in self:
+        params = dict([(k, self.particles[k]) for k in self.particles.keys() if k in ['blur', 'threshold', 'max_disp', 'max_blink', 'verbose']])
+        params.update(kwargs)
+        kwargs = params
+    kwargs['verbose'] = kwargs['verbose'] if 'verbose' in kwargs else True
+    spots = detect_spots(self, **kwargs)
+    return link_spots(spots, kwargs['max_blink'], kwargs['max_disp'], kwargs['verbose'])
+
+
+def detect_spots(self, **kwargs):
+    """
+    Find the spots on the Dataset's images.
+
+    Uses values from Dataset.detection, that can be set using
+    test_detection_conditions()
+    The number of simultaneous processes can be modified using
+    Dataset.max_processes, which defaults to the number of CPUs
+    (max speed, at the cost of slowing down all other work)
+
+    Arguments
+        verbose: Writes about the time and frames and stuff as it works
+    """
+    kwargs['verbose'] = kwargs['verbose'] if 'verbose' in kwargs else True
+    # Multiprocess through it
+    t = time()
+    spots, pool = list(), Pool(self.max_processes)
+    for blobs in pool.imap(find_blobs, iter((i, j, kwargs) for j, i in enumerate(self.source.read()))):
+        if kwargs['verbose'] == True:
+            print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4] if len(blobs) > 0 else 'i', time() - t), end='')
+            stdout.flush()
+        spots.extend(blobs)
+    pool.close()
+    pool.join()
+
+    if kwargs['verbose'] is True:
+        print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), self.source.length, time() - t))
+
+    return np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, float, int)}).view(np.recarray)
 
 
 def find_blobs(*args):
@@ -66,18 +124,19 @@ def fit_gaussian_on_blobs(img, blobs, keep_unfit):
     return spr_blobs
 
 
-def lame_linkage(self, verbose):
+def link_spots(spots, max_blink, max_disp, verbose):
+    """Correlate spots through time as tracks (or particles)."""
     # Reorganize spots by frame and prepare the Graph
     G = nx.DiGraph()
-    n_frames = self.source.length
+    n_frames = max(spots['t']) + 1
     frames = [[] for f in range(n_frames)]
-    for i, spot in enumerate(self.spots):
+    for i, spot in enumerate(spots):
         frames[spot['t']].append((spot['x'], spot['y'], i))
         G.add_node(i, frame=spot['t'])
 
     # Make optimal pairs for all acceptable frame intervals
     # (as defined in max_blink)
-    for delta in range(1, self.linkage.max_blink + 1):
+    for delta in range(1, max_blink + 1):
         if verbose is True:
             print('\rDelta frames: {0}'.format(delta), end='')
             stdout.flush()
@@ -87,7 +146,7 @@ def lame_linkage(self, verbose):
                        np.array(frames[f + delta])[:, :2])
 
             # Filter out the spots with distances that excess max_disp in x and/or y
-            disp_filter = d - self.linkage.max_disp >= 0
+            disp_filter = d - max_disp >= 0
             disp_mask = np.logical_or(disp_filter[:, :, 0], disp_filter[:, :, 1])
 
             # Reduce to one dimension
@@ -106,42 +165,39 @@ def lame_linkage(self, verbose):
                            weight=d[s1][s2])
 
     # Only keep the tracks that are not ambiguous (1 spot per frame max)
-    tracks, a_tracks = list(), list()
+    tracks = list()
     for track in nx.weakly_connected_component_subgraphs(G):
-        t_frames = np.array(sorted([(s, self.spots[s]['t']) for s in track], key=lambda a: a[1]))
+        t_frames = np.array(sorted([(s, spots[s]['t']) for s in track], key=lambda a: a[1]))
 
         # Good tracks
         if len(t_frames[:, 1]) == len(set(t_frames[:, 1])):
-            tracks.append(sorted(track.nodes(), key=lambda s: self.spots[s]['t']))
+            tracks.append(sorted(track.nodes(), key=lambda s: spots[s]['t']))
 
         # Ambiguous tracks
-        # This is a work in progress. More or less abandoned.
-        elif self.linkage.ambiguous_tracks == True:
+        # This is a work in progress.
+        else:
             nodes = track.nodes()
-            track = dict([(self.spots[s]['t'], []) for s in nodes])
+            track = dict([(spots[s]['t'], []) for s in nodes])
             for s in nodes:
-                track[self.spots[s]['t']].append(s)
+                track[spots[s]['t']].append(s)
             ts = sorted(track.keys())
             for t in ts[:-1]:
                 if len(track[t]) > 1:
                     now = track[t]
                     t_after = ts.index(t) + 1
                     after = track[ts[t_after]]
-                    scores = np.abs(np.array([[self.spots[s]['x'], self.spots[s]['y']] for s in now])[:, np.newaxis] - np.array([[self.spots[s]['x'], self.spots[s]['y']] for s in after]))
+                    scores = np.abs(np.array([[spots[s]['x'], spots[s]['y']] for s in now])[:, np.newaxis] - np.array([[spots[s]['x'], spots[s]['y']] for s in after]))
                     scores = scores[:, :, 0] + scores[:, :, 1]
                     pair = np.where(scores == scores.min())
                     if len(pair[0]) > 1:
                         pair = (np.array(pair).T)[0]
                     now, after = [now[pair[0]]], [after[pair[1]]]
-            track = sorted([t[0] for t in track.values()], key=lambda a: self.spots[a]['t'])
-            ts = [self.spots[s]['t'] for s in track]
-            a_tracks.append(track)
-
-    if self.linkage.ambiguous_tracks == True:
-        tracks.extend(a_tracks)
+            track = sorted([t[0] for t in track.values()], key=lambda a: spots[a]['t'])
+            ts = [spots[s]['t'] for s in track]
+            tracks.append(track)
 
     if verbose is True:
-        print('\nFound {0} tracks'.format(len(tracks)))
+        print('\nFound {0} particles'.format(len(tracks)))
     return tracks
 
 
@@ -149,3 +205,12 @@ def gaussian_2d(coords, A, x0, y0, s):
     """Draw a 2D gaussian with given properties."""
     x, y = coords
     return (A * np.exp(((x - x0)**2 + (y - y0)**2) / (-2 * s**2))).ravel()
+
+__content__ = {
+    'particles': {
+        'find': {'stable_particles': find_stable_particles}
+    },
+    'spots': {
+        'find': {'log_and_fit': detect_spots}
+    }
+}

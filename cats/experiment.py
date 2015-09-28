@@ -9,23 +9,18 @@ from __future__ import print_function
 
 from .adict import dadict
 from .sources import Images, ROI, globify
-from . import defaults
-from . import extensions
+from . import defaults, extensions, content
 import os
 import numpy as np
 from matplotlib import pyplot as plt
+from skimage import io
 from skimage.filters import gaussian_filter
 from skimage.transform import rotate
-from skimage import io, draw, exposure
 from time import time
 import networkx as nx
-from colorsys import hls_to_rgb
-from random import randrange
 from math import ceil, atan, degrees
-from multiprocessing import Pool
 from sys import stdout
 import pickle
-import xml.etree.ElementTree as ET
 __all__ = ['Dataset', 'Experiment']
 
 
@@ -33,7 +28,7 @@ __all__ = ['Dataset', 'Experiment']
 class Dataset(dadict):
 
     """
-    A dataset is a collection of data that have the same experimental condition.
+    A dataset is a collection of data that have the same experimental conditions.
 
     Notably, these conditions include:
         - source of images
@@ -64,8 +59,6 @@ class Dataset(dadict):
         """Initialize the object."""
         super(Dataset, self).__init__()
         self._defaults = defaults.Experiment
-        self.spots = None
-        self.tracks = None
         # If the first argument is a string, it is the source
         if len(args) > 0 and (type(args[0]) is str or isinstance(args[0], Images)):
             args = list(args)
@@ -104,12 +97,12 @@ class Dataset(dadict):
             f: file to save the dataset to. If None, the function returns the content of the would-be file
         """
         f = self.file if f is None and 'file' in self else f
-        content = pickle.dumps(self)
+        cont = pickle.dumps(self)
         if f is not None:
             with open(f, 'w') as data:
-                data.write(content)
+                data.write(cont)
             self.file = f
-        return content if f is None else None
+        return cont if f is None else None
 
     def load(self, f=None):
         """
@@ -154,143 +147,6 @@ class Dataset(dadict):
         if save == True:
             self.detection = kwargs
         return D.spots
-
-    def detect_spots(self, verbose=True):
-        """
-        Find the blobs on the Dataset's images.
-
-        Uses values from Dataset.detection, that can be set using
-        test_detection_conditions()
-        The number of simultaneous processes can be modified using
-        Dataset.max_processes, which defaults to the number of CPUs
-        (max speed, at the cost of slowing down all other work)
-
-        Arguments
-            verbose: Writes about the time and frames and stuff as it works
-        """
-        # Get the detection function
-        detection_func = getattr(detection, self.detection.method)
-
-        # Multiprocess through it
-        t = time()
-        spots, pool = list(), Pool(self.max_processes)
-        for blobs in pool.imap(detection_func, iter((i, j, self.detection) for j, i in enumerate(self.source.read()))):
-            if verbose is True:
-                print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4] if len(blobs) > 0 else 'i', time() - t), end='')
-                stdout.flush()
-            spots.extend(blobs)
-        pool.close()
-        pool.join()
-
-        # Save the spot list into memory
-        if verbose is True:
-            print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), self.source.length, time() - t))
-        self.spots = np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, float, int)}).view(np.recarray)
-        return spots
-
-    def link_spots(self, verbose=True):
-        """
-        Link spots together in time.
-
-        Argument:
-            verbose: Writes about the time and frames and stuff as it works
-        """
-        # Get the detection function
-        linkage_func = getattr(linkage, self.linkage.method)
-        self.tracks = linkage_func(self, verbose)
-
-    def filter(self, overwrite=True, parameters=None):
-        """
-        Filter the tracks obtained by link_spots based on parameters set either in self.filtration, either passed as arguments.
-
-        Argument
-            overwrite: bool. If True, the Dataset's tracks will be replaced by the filtered ones.
-            parameters: dict. dadict to use for filtering. If None, will use the ones from the Dataset's parameters (Dataset.filtration).
-        """
-        if parameters is None:
-            parameters = self.filtration
-        if parameters['max_length'] is None:
-            parameters['max_length'] = self.source.length
-        n_tracks = list()
-        for track in self.tracks:
-            if parameters['min_length'] <= len(track) <= parameters['max_length']:
-                if np.abs(np.diff(sorted([self.spots[s]['t'] for s in track]))).mean() <= parameters['mean_blink']:
-                    n_tracks.append(track)
-
-        if overwrite is True:
-            self.filtration = parameters
-            self.tracks = n_tracks
-
-        return n_tracks
-
-    def draw(self, output=None, spots=None, tracks=True, rescale=True):
-        """
-        Draw the tracks and/or spots onto the images of the dataset as RGB images.
-
-        Argument:
-            output: the directory in which to write the files. If None, returns the images as a list of arrays.
-            spots: if True, surrounds the spots on the images with a red circle. If None, only show spots if no tracks are available.
-            tracks: if present, surround each of the spots in the tracks on the images with a colored circle. All spots within the same track will have the same color.
-            rescale: adjust intensity levels to the detected content
-        """
-        if output is None:
-            images = list()
-
-        if spots is None and self.tracks is None:
-            spots = True
-
-        # Separate tracks per image
-        if tracks is True and self.tracks is not None:
-            # Make colors
-            colors = [np.array(hls_to_rgb(randrange(0, 360) / 360, randrange(20, 80, 1) / 100, randrange(20, 80, 10) / 100)) * 255 for i in self.tracks]
-            frames = [[] for f in range(self.source.length)]
-            for track, color in zip(self.get_tracks(), colors):
-                sigma = int(np.mean([s['s'] for s in track]))
-                for s in track:
-                    spot = (int(s['y']), int(s['x']), sigma, color)
-                    frames[s['t']].append(spot)
-
-        # Calculate intensity range:
-        if rescale == True:
-            if tracks is True and self.tracks is not None:
-                i = [i for t in self.get_tracks('i') for i in t]
-            elif spots is True and self.spots is not None:
-                i = [s['i'] for s in self.spots]
-            if len(i) != 0:
-                m, s = np.mean(i), np.std(i)
-                scale = (m - 3 * s, m + 3 * s)
-            else:
-                scale = False
-
-        shape = self.source.dimensions[::-1]
-        for t, image in enumerate(self.source.read()):
-            # Prepare the output image (a 8bits RGB image)
-            ni = np.zeros([3] + list(self.source.dimensions[::-1]), dtype=np.uint8)
-
-            if rescale is True and scale is not False:
-                image = exposure.rescale_intensity(image, in_range=scale)
-
-            ni[..., :] = image / image.max() * 255
-            ni = ni.transpose(1, 2, 0)
-
-            # Mark spots
-            if spots is True and self.spots is not None:
-                for s in (self.spots[i] for i in np.where(self.spots['t'] == t)[0]):
-                    area = draw.circle_perimeter(int(s['y']), int(s['x']), int(s['s']), shape=shape)
-                    ni[area[0], area[1], :] = (255, 0, 0)
-
-            # Mark tracks
-            if tracks is True and self.tracks is not None:
-                for s in frames[t]:
-                    area = draw.circle_perimeter(s[0], s[1], s[2], shape=shape)
-                    ni[area[0], area[1], :] = s[3]
-
-            # Show/save image
-            if output is None:
-                images.append(ni)
-            else:
-                io.imsave("{0}/{1}.tif".format(output, t), ni)
-        return images if output is None else None
 
     def get_tracks(self, properties=None):
         """
@@ -339,21 +195,25 @@ class Dataset(dadict):
             t.append(spots[s])
         return t
 
-    def as_isbi_xml(self, f='result.xml', snr=7, density='low med high 100.0', scenario='NO_SCENARIO'):
-        """Return tracks as ISBI 2012 Challenge XML for scoring."""
-        root = ET.Element('root')
-        t = ET.SubElement(root, 'TrackContestISBI2012')
-        t.attrib = {'SNR': str(snr), 'density': density, 'scenario': scenario}
-        for track in self.get_tracks():
-            p = ET.SubElement(t, 'particle')
-            for spot in track:
-                s = ET.SubElement(p, 'detection')
-                s.attrib = {'t': str(spot['t']),
-                            'x': str(round(spot['x'], 2)),
-                            'y': str(round(spot['y'], 2)),
-                            'z': '0'}
-        E = ET.ElementTree(element=root)
-        E.write(f)
+    def find(self, cont, **kwargs):
+        """
+        Find (at least, search for) content in the images.
+
+        This function does not do anything but to call the 'search_method' from content. This search method is in charge of everything else. See the doc from the 'content' submodule.
+        """
+        if type(cont) is str:
+            cont = [cont]
+        for c in cont:
+            method = kwargs['search_method'] if 'search_method' in kwargs else self[c]['search_method']
+            getattr(content, c)['find'][method](self, **kwargs)
+
+    def get(self, cont):
+        """Return the content of interest that has already been found."""
+        if cont in self and 'get' in self[cont]:
+            return getattr(content, cont)['get'][self[cont]['get']]
+
+    def filter(self):
+        """Filter the content using given filters."""
 
 
 @extensions.append
@@ -508,12 +368,12 @@ class Experiment(dadict):
             f: file to save the experiment to. If None, the experiment is saved to the last file it was saved to or loaded from, which is written in the 'file' parameter of the experiment. If this parameter does not exist, the function returns the content of the would-be file as an array of pickled objects.
         """
         f = self.file if f is None and 'file' in self else f
-        content = pickle.dumps(self)
+        cont = pickle.dumps(self)
         if f is not None:
             with open(f, 'w') as data:
-                data.write(content)
+                data.write(cont)
             self.file = os.path.abspath(f)
-        return content if f is None else None
+        return cont if f is None else None
 
     def load(self, f=None):
         """

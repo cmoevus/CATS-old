@@ -10,12 +10,84 @@ ROI: access a specific region, in x, y, t, of a set of images.
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import numpy as np
 from glob import glob
 import javabridge
 import bioformats
 import os
 from skimage import io
 from . import extensions
+
+
+class ImageDir(object):
+
+    """
+    Read a directory of images, or a list of directories or images.
+
+    Each given path (as understood by Python's glob module) is considered a channel.
+    This class aims to behave like bioformats.ImageReader, to the eyes of the Images class. Hence the weird stuff. It was not meant to be beautiful.
+
+    You are in charge of making sure that all sources have the same length and the same dimensions. This will not do it for you. Beware the weird errors.
+
+    Arguments:
+        Paths (including wildcards) to the directories of interest. Each path is one channel. You can name channels using keyword arguments. The channels will be numbered in the order you gave them.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Set the sources as channels."""
+        channels, name = dict(), 0
+        for source in args:
+            if type(source) is dict:
+                channels.update(source)
+            else:
+                channels[name] = source
+                name += 1
+        channels.update(kwargs)
+        self.channels, self.sources = list(), list()
+        for name, source in channels.items():
+            source = globify(source)
+            n_files = len(glob(source))
+            if n_files == 0:
+                raise ValueError('Source {0} is empty or does not exist.'.format(source))
+            else:
+                self.channels, self.sources = name, source
+        # Compatibility with bioformats.ImageReader
+        self.rdr = self
+
+    def getSizeX(self):
+        """Return the size in the x dimension (in pixels)."""
+        return self.read(c=0, t=0).shape[1]
+
+    def getSizeY(self):
+        """Return the size in the y dimension (in pixels)."""
+        return self.read(c=0, t=0).shape[0]
+
+    def getSizeT(self):
+        """Return the number of frames in series."""
+        return len(glob(self.sources[0]))
+
+    def getSizeC(self):
+        """Return the number of channels."""
+        return len(self.sources)
+
+    def read(self, c=None, t=0):
+        """Return an image from the sources."""
+        # A. Fetch the image(s)
+        c = self.channels if c is None else c
+        image = list()
+        for channel in c:
+            if type(channel) is int:
+                source = self.sources[channel]
+            else:
+                source = self.sources[self.channels[channel]]
+        image.append(io.imread(glob(source)[t]))
+        # B. Make a 3D array if need be.
+        if len(image) > 1:
+            img = np.zeros((image[0].shape[1], image[0].shape[0], len(image)), dtype=int)
+            for n, i in enumerate(image):
+                img[:, :, n] = image[n]
+            image = img
+        return image
 
 
 @extensions.append
@@ -174,20 +246,19 @@ class Images(object):
 class ROI(Images):
 
     """
-    Select specific regions in x, y, t from a given Images object.
+    Select a specific region in x, y, t, c from a given Images object.
 
-    ROI filters an Images object by adding limits to to it. It behaves entirely
-     like an Images object, appart from this filtering.
+    ROI adds limits to Images object. It is a filtered Images object. It behaves entirely like an Images object, plus the filtering.
 
     Keyword arguments:
         images: the source Images object, or a path to the images (see doc from Images).
-        x: slice (or list) of the initial and final (excluded) pixel to select, in the x axis.
-        y: slice (or list) of the initial and final (excluded) pixel to select, in the y axis.
-        t: slice (or list) of the initial and final (excluded) frame to select.
-        c: channel to use (indice of the first channel is 0). Only applies to image files. Not dirs.
+        x: slice (or list) of the initial and final (excluded) pixel to select, in the x axis. If None, selects all pixels.
+        y: slice (or list) of the initial and final (excluded) pixel to select, in the y axis. If None, selects all pixels.
+        t: slice (or list) of the initial and final (excluded) frame to select. If None, selects all frames.
+        c: channels to use (indice of the first channel is 0). Only applies to image files. Not TIF dirs.  If None, selects all channels.
     """
 
-    def __init__(self, images, x=None, y=None, t=None, c=0):
+    def __init__(self, images, x=None, y=None, t=None, c=[0]):
             """Build the image object and set the limits."""
             self.images = images if isinstance(images, Images) is True else Images(images)
             self.x, self.y, self.t, self.channel = x, y, t, c
@@ -206,7 +277,9 @@ class ROI(Images):
             pass
         elif hasattr(s, '__iter__'):
             if s[1] == None:
-                s[1] = fallback
+                s = (s[0], fallback)
+            if s[0] == None:
+                s = (0, s[1])
             s = slice(*s)
         elif isinstance(s, int):
             s = slice(0, s)
@@ -263,6 +336,15 @@ class ROI(Images):
     def t(self, value):
         """Set the limits of the ROI in time."""
         self._t = self._slicify(value, self.images.length)
+
+    @property
+    def c(self):
+        """Return the channels of the ROI."""
+        return self._c
+
+    @c.setter
+    def c(self, value):
+        """Set the list of channels to select."""
 
     def read(self):
         """Return a generator of ndarrays of every images in the source."""

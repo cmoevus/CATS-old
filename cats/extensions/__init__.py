@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 """
 Wrap all extensions into one module.
 

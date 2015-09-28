@@ -43,9 +43,6 @@ class adict(object):
         keyworded arguments
     """
 
-    fetched_functs = ['keys', 'values', 'items', 'iterkeys', 'iteritems',
-                      'itervalues', '__iter__']
-
     def __init__(self, *args, **kwargs):
         """Set up the attribute dict and values."""
         self.__dict__['_attribs'] = dict()
@@ -53,14 +50,10 @@ class adict(object):
 
     def __getattr__(self, attr):
         """Return a fetched function, an attribute-item or an error."""
-        error = '{0} not found'.format(attr)
-        if attr in self.fetched_functs:
-            return getattr(self.__dict__['_attribs'], attr)
-        else:
-            try:
-                return self.__dict__['_attribs'][attr]
-            except KeyError:
-                raise AttributeError(error)
+        try:
+            return self.__dict__['_attribs'][attr]
+        except KeyError:
+            raise AttributeError('{0} not found'.format(attr))
 
     def __setattr__(self, attr, value):
         """
@@ -69,20 +62,15 @@ class adict(object):
         - Prevents from overwriting fetched functions
         - Transforms all subdicts into objects of the same type as this one
         """
-        if attr in self.fetched_functs:
-            # Prevent from blocking the read-only attributes from __dict__
-            e = 'object attribute {0} is read-only'.format(attr)
-            raise AttributeError(e)
-        else:
-            # Transform all subdicts into same type as self
-            if type(value) is dict:
-                value = type(self)(**value)
+        # Transform all subdicts into same type as self
+        if type(value) is dict:
+            value = type(self)(**value)
 
-            # Put item in the right dict
-            if attr[0] == '_' or attr in dir(self):
-                object.__setattr__(self, attr, value)
-            else:
-                self.__dict__['_attribs'][attr] = value
+        # Put item in the right dict
+        if attr[0] == '_' or attr in dir(self):
+            object.__setattr__(self, attr, value)
+        else:
+            self.__dict__['_attribs'][attr] = value
 
     def __delattr__(self, attr):
         """Delete attribute, hidden or not."""
@@ -92,12 +80,32 @@ class adict(object):
             del self.__dict__['_attribs'][attr]
 
     def __repr__(self):
-        """Return the representation of the attribute dict."""
-        return self.__dict__['_attribs'].__repr__()
+        """
+        Return the representation of the attribute dict.
 
-    def __str__(self):
-        """Return the string representation of the attribute dict."""
-        return self.__dict__['_attribs'].__str__()
+        I like this version because it looks clean. I don't like it because it is good for CATS but maybe not for other things, since it cuts out content and adds indents and stuff.
+        """
+        r = ''
+        for k, v in self.iteritems():
+            if '__iter__' in dir(v) and 'items' not in dir(v):
+                v = v.__repr__()
+                if len(v) > 80:
+                    v = v[0:37] + '...' + v[-37:]
+            elif 'items' in dir(v):
+                v = v.__repr__().replace('\n', '\n\t')
+            else:
+                v = v.__repr__()
+            r += ' {0}: {1},\n'.format(k.__repr__(), v)
+        r = '{' + r[1:-2] + '}'
+        return r
+
+    # def __repr__(self):
+    #     """Return the representation of the attribute dict."""
+    #     r = ''
+    #     for k, v in self.iteritems():
+    #         r += ' {0}: {1},\n'.format(k.__repr__(), v.__repr__())
+    #     r = '{' + r[1:-2] + '}'
+    #     return r
 
     def __setitem__(self, key, value):
         """Consider items as attributes."""
@@ -116,6 +124,34 @@ class adict(object):
             return key in self.__dict__
         else:
             return key in self.__dict__['_attribs']
+
+    def keys(self):
+        """Return the keys from _attribs."""
+        return self._attribs.keys()
+
+    def values(self):
+        """Return the values from _attribs."""
+        return self._attribs.values()
+
+    def items(self):
+        """Return the key-value pairs from _attribs."""
+        return self._attribs.items()
+
+    def iterkeys(self):
+        """Return the key from _attribs as an iterator."""
+        return self._attribs.iterkeys()
+
+    def itervalues(self):
+        """Return the values from _attribs as an iterator."""
+        return self._attribs.itervalues()
+
+    def iteritems(self):
+        """Return the key-value pairs from _attribs as an iterator."""
+        return self._attribs.iteritems()
+
+    def __iter__(self):
+        """Wrapper for _attribs.__iter__."""
+        return self._attribs.__iter__()
 
     def __setprop__(self, prop, value):
         """Set the value of a property. To be used in property setters instead of object.__setattr__()."""
@@ -206,6 +242,51 @@ class dadict(adict):
                 return self._defaults[prop]
             else:
                 raise AttributeError('{0} not found.'.format(prop))
+
+    def keys(self):
+        """Return the key from _attribs and _defaults."""
+        keys = self._attribs.keys()
+        return keys + [k for k in self._defaults.keys() if k not in keys]
+
+    def values(self):
+        """Return the values from _attribs and _defaults."""
+        return [self[k] for k in self.keys()]
+
+    def items(self):
+        """Return the key-value pairs from _attribs and _defaults."""
+        return [(k, self[k]) for k in self.keys()]
+
+    def iterkeys(self):
+        """Return the key from _attribs and _defaults as an iterator."""
+        has = list()
+        for i in self._attribs.iterkeys():
+            has.append(i)
+            yield i
+        for i in self._defaults.iterkeys():
+            if i not in has:
+                yield i
+
+    def itervalues(self):
+        """Return the values from _attribs and _defaults as an iterator."""
+        for i in self.iterkeys():
+            yield self[i]
+
+    def iteritems(self):
+        """Return the key-value pairs from _attribs and _defaults as an iterator."""
+        for i in self.iterkeys():
+            yield (i, self[i])
+
+    def __iter__(self):
+        """Alias for iterkeys."""
+        return self.iterkeys()
+
+    def __contains__(self, key):
+        """Look if the adict has an item, hidden or not."""
+        if key[0] == '_':
+            return key in self.__dict__
+        else:
+            found = key in self.__dict__['_attribs']
+            return found if found == True else key in self._defaults
 
     def copy(self):
         """Copy to dadict object rather than whatever subclass."""
