@@ -29,6 +29,10 @@ Experiment = adict({
     }
 })
 
+Particles = adict({
+    'processor': 'stationary_particles'
+})
+
 Images = adict({
     'barrier_detection': {
         'frames': None,  # The frames to use for finding the barriers. If None, uses all the images.

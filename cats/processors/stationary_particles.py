@@ -4,7 +4,7 @@ from __future__ import print_function
 
 from sys import stdout
 from time import time
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 import numpy as np
 from numpy import ma
 from skimage.feature import blob_log
@@ -12,58 +12,65 @@ from scipy import ndimage
 from scipy.optimize import curve_fit
 from math import floor, ceil
 import networkx as nx
+from ..content.particles import Particles, Particle
 
-__all__ = ['find_stable_particles', 'detect_spots', 'find_blobs', 'fit_gaussian_on_blobs', 'link_spots', 'gaussian_2d']
+__all__ = ['find_stationary_particles', 'detect_spots', 'find_blobs', 'fit_gaussian_on_blobs', 'link_spots', 'gaussian_2d']
 
 
-def find_stable_particles(self, **kwargs):
+def find_stationary_particles(source, blur, threshold, keep_unfit=False, max_blink=25, max_disp=(1, 1), max_processes=None, verbose=True):
     """
-    Find the spots on the Dataset's images.
+    Find particles that do not move much in the given source.
+
+    Arguments:
+        blur: (float) see ndimage.gaussian_filter()'s 'sigma' argument
+        threshold (float): see scipy.feature.blob_log()'s 'threshold' argument
+        max_blink: (int) max number of frames a particle can 'disappear' before it is considered a different particle
+        max_disp: (2-tuple) max distance (x, y) the particle can move between two frames before it is considered a different particle.
+        keep_unfit: (bool) keep the spots that could not be fitted with a 2D Gaussian function (potentially lesser quality detections).
+        max_processes: (int) the maximum number of simultaneous processes. Max and default value is the number of CPUs in the computer.
+        verbose: (bool) give information while processing
+
+    Returns a list of particles.
+    """
+    spots = detect_spots(source, blur, threshold, keep_unfit, max_processes, verbose)
+    tracks = link_spots(spots, max_blink, max_disp, verbose)
+    particles = Particles(processor=find_stationary_particles, blur=blur, threshold=threshold, keep_unfit=keep_unfit, max_blink=max_blink, max_disp=max_disp, max_processes=max_processes, verbose=True, sources=source)
+    for track in tracks:
+        t = list()
+        for s in track:
+            t.append(spots[s])
+        particle = np.array(t, dtype=t[0].dtype).view(Particle)
+        particle.source = source
+        particles.append(particle)
+    return particles
+
+
+def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, verbose=True):
+    """
+    Find the gaussians in the given images.
 
     Arguments:
         blur: see ndimage.gaussian_filter()'s 'sigma' argument
         threshold: see scipy.feature.blob_log()'s 'threshold' argument
-        max_blink: max number of frames a particle can 'disappear' before it is considered a different particle
-        max_disp: max distance (x, y) the particle can move between two frames before it is considered a different particle.
-        verbose: give information as it works
-
-    """
-    if 'particles' in self:
-        params = dict([(k, self.particles[k]) for k in self.particles.keys() if k in ['blur', 'threshold', 'max_disp', 'max_blink', 'verbose']])
-        params.update(kwargs)
-        kwargs = params
-    kwargs['verbose'] = kwargs['verbose'] if 'verbose' in kwargs else True
-    spots = detect_spots(self, **kwargs)
-    return link_spots(spots, kwargs['max_blink'], kwargs['max_disp'], kwargs['verbose'])
-
-
-def detect_spots(self, **kwargs):
-    """
-    Find the spots on the Dataset's images.
-
-    Uses values from Dataset.detection, that can be set using
-    test_detection_conditions()
-    The number of simultaneous processes can be modified using
-    Dataset.max_processes, which defaults to the number of CPUs
-    (max speed, at the cost of slowing down all other work)
-
-    Arguments
+        keep_unfit: (bool) keep the spots that could not be fitted with a 2D Gaussian function (potentially lesser quality detections).
+        max_processes: the maximum number of simultaneous processes. Max value should be the number of CPUs in the computer.
         verbose: Writes about the time and frames and stuff as it works
     """
-    kwargs['verbose'] = kwargs['verbose'] if 'verbose' in kwargs else True
+    max_processes = cpu_count() if max_processes is None else max_processes
     # Multiprocess through it
     t = time()
-    spots, pool = list(), Pool(self.max_processes)
-    for blobs in pool.imap(find_blobs, iter((i, j, kwargs) for j, i in enumerate(self.source.read()))):
-        if kwargs['verbose'] == True:
+    spots, pool = list(), Pool(max_processes)
+    # for blobs in iter(find_blobs(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())):
+    for blobs in pool.imap(find_blobs, iter((i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read()))):
+        if verbose == True:
             print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][4] if len(blobs) > 0 else 'i', time() - t), end='')
             stdout.flush()
         spots.extend(blobs)
     pool.close()
     pool.join()
 
-    if kwargs['verbose'] is True:
-        print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), self.source.length, time() - t))
+    if verbose is True:
+        print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), source.length, time() - t))
 
     return np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, float, int)}).view(np.recarray)
 
@@ -79,17 +86,18 @@ def find_blobs(*args):
         image: a numpy array representing the image to analyze
         blur: see ndimage.gaussian_filter()'s 'sigma' argument
         threshold: see scipy.feature.blob_log()'s 'threshold' argument
+        keep_unfit: (bool) keep the spots that could not be fitted with a 2D Gaussian function (potentially lesser quality detections).
         extra: information to be added at the end of the blob's properties
     """
     args = args[0] if len(args) == 1 else args
-    image, extra, blur, threshold, = args[0], args[1:-1], args[-1]['blur'], args[-1]['threshold']
+    image, blur, threshold, keep_unfit, extra = args[0], args[1], args[2], args[3], args[4:]
     b = blob_log(ndimage.gaussian_filter(image, blur), threshold=threshold, min_sigma=1)
     blobs = list()
     for y, x, s in b:
         blob = [x, y, s, image[y][x]]
         blob.extend(extra)
         blobs.append(tuple(blob))
-    return fit_gaussian_on_blobs(image, blobs, args[-1]['keep_unfit'])
+    return fit_gaussian_on_blobs(image, blobs, keep_unfit)
 
 
 def fit_gaussian_on_blobs(img, blobs, keep_unfit):
@@ -141,9 +149,11 @@ def link_spots(spots, max_blink, max_disp, verbose):
             print('\rDelta frames: {0}'.format(delta), end='')
             stdout.flush()
         for f in range(n_frames - delta):
+            if f not in frames or f + delta not in frames:
+                continue
+
             # Matrix of distances between spots
-            d = np.abs(np.array(frames[f])[:, np.newaxis, :2] -
-                       np.array(frames[f + delta])[:, :2])
+            d = np.abs(np.array(frames[f])[:, np.newaxis, :2] - np.array(frames[f + delta])[:, :2])
 
             # Filter out the spots with distances that excess max_disp in x and/or y
             disp_filter = d - max_disp >= 0
@@ -198,6 +208,7 @@ def link_spots(spots, max_blink, max_disp, verbose):
 
     if verbose is True:
         print('\nFound {0} particles'.format(len(tracks)))
+
     return tracks
 
 
@@ -206,11 +217,7 @@ def gaussian_2d(coords, A, x0, y0, s):
     x, y = coords
     return (A * np.exp(((x - x0)**2 + (y - y0)**2) / (-2 * s**2))).ravel()
 
-__content__ = {
-    'particles': {
-        'find': {'stable_particles': find_stable_particles}
-    },
-    'spots': {
-        'find': {'log_and_fit': detect_spots}
-    }
+__processor__ = {
+    'particles': {'stationary': find_stationary_particles},
+    'gaussians': {'log_and_fit': detect_spots}
 }

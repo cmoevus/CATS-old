@@ -17,6 +17,7 @@ import bioformats
 import os
 from skimage import io
 from . import extensions
+__all__ = ['ImageDir', 'Images', 'ROI', 'globify']
 
 
 class ImageDir(object):
@@ -225,7 +226,7 @@ class Images(object):
         try:
             return self._dims
         except:
-            raise ValueError('Source files are not accessible.')
+            raise ValueError('Source files cannot be read.')
 
     @dimensions.setter
     def dimensions(self, value):
@@ -243,7 +244,7 @@ class Images(object):
         try:
             return self._len
         except:
-            raise ValueError('Source files are not accessible.')
+            raise ValueError('Source files cannot be read.')
 
     @length.setter
     def length(self, value):
@@ -260,7 +261,7 @@ class Images(object):
         try:
             return self._channels
         except:
-            raise ValueError('Source files are not accessible.')
+            raise ValueError('Source files cannot be read.')
 
     @property
     def path(self):
