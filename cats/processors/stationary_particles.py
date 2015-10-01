@@ -142,16 +142,14 @@ def link_spots(spots, max_blink, max_disp, verbose):
         frames[spot['t']].append((spot['x'], spot['y'], i))
         G.add_node(i, frame=spot['t'])
 
-    # Make optimal pairs for all acceptable frame intervals
-    # (as defined in max_blink)
+    # Make optimal pairs for all acceptable frame intervals (as defined in max_blink)
     for delta in range(1, max_blink + 1):
         if verbose is True:
             print('\rDelta frames: {0}'.format(delta), end='')
             stdout.flush()
         for f in range(n_frames - delta):
-            if f not in frames or f + delta not in frames:
+            if len(frames[f]) == 0 or len(frames[f + delta]) == 0:
                 continue
-
             # Matrix of distances between spots
             d = np.abs(np.array(frames[f])[:, np.newaxis, :2] - np.array(frames[f + delta])[:, :2])
 

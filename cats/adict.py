@@ -6,6 +6,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 from copy import deepcopy
+import pickle
+import os
 __all__ = ['adict', 'dadict']
 
 
@@ -194,8 +196,37 @@ class adict(object):
         d = deepcopy(self.__dict__)
         return type(self)(d)
 
+    def save(self, f=None):
+        """
+        Save the object to the given file.
+
+        Arguments:
+            f: file to save the dataset to. If None, the function returns the content of the would-be file
+        """
+        cont = pickle.dumps(self)
+        if f is not None:
+            with open(f, 'w') as data:
+                data.write(cont)
+        return cont if f is None else None
+
+    def load(self, f):
+        """
+        Load an attribute dict from a file or string (pickle).
+
+        Arguments:
+            f: file or string to load from.
+        """
+        if os.path.isfile(str(f)) is True:
+            with open(f, 'r') as data:
+                D = pickle.load(data)
+        else:
+            D = pickle.loads(f)
+        self.update([i for i in D.__dict__.iteritems() if i[0] != '_attribs'], D)
+
 
 class dadict(adict):
+
+    # I think this class needs to be thoroughly reworked because it is completely hackish...
 
     """
     Attribute dictionary that also support default values.
@@ -208,7 +239,7 @@ class dadict(adict):
 
     def __init__(self, *args, **kwargs):
         """Call parent class. Add support for defaults."""
-        self._defaults = adict() if '_defaults' not in kwargs else kwargs['_defaults']
+        self.__dict__['_defaults'] = adict()
         adict.__init__(self, *args, **kwargs)
 
     def __getattr__(self, attr):
@@ -230,6 +261,8 @@ class dadict(adict):
         if attr != '_defaults' and type(value) is dict:
             d = self._defaults[attr] if attr in self._defaults else adict()
             adict.__setattr__(self, attr, dadict(_defaults=d, **value))
+        elif attr == '_defaults':
+            object.__setattr__(self, '_defaults', value)
         else:
             adict.__setattr__(self, attr, value)
 
@@ -242,6 +275,24 @@ class dadict(adict):
                 return self._defaults[prop]
             else:
                 raise AttributeError('{0} not found.'.format(prop))
+
+    @property
+    def _defaults(self):
+        """
+        The defaults values associated with the attribute dict.
+
+        When setting a new dictionary of defaults, the defaults of sub-dadict of the object are updated to the new defaults, if the new defaults contains default values for the sub-dadicts.
+        As a reminder, all sub-dicts of the object are automatically transformed into dadicts when they are set.
+        """
+        return self.__dict__['_defaults']
+
+    @_defaults.setter
+    def _defaults(self, value):
+        self.__dict__['_defaults'] = value
+        for k, v in self.iteritems():
+            if isinstance(v, dadict):
+                if k in value:
+                    self[k]._defaults = value[k]
 
     def keys(self):
         """Return the key from _attribs and _defaults."""
@@ -295,3 +346,15 @@ class dadict(adict):
     def deepcopy(self):
         """Deep copy to dadict object rather than whatever subclass."""
         return dadict(**deepcopy(self.__dict__))
+
+    def load(self, f):
+        """
+        Load a dadict from a file or string (pickle).
+
+        This method reestablishes the hierarchy of _defaults.
+
+        Arguments:
+            f: file or string to load the dataset from.
+        """
+        adict.load(self, f)
+        self._defaults = self._defaults

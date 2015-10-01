@@ -114,7 +114,7 @@ class ImageDir(object):
             except (IndexError, ValueError):
                 raise ValueError('Channel "{0}" does not exist'.format(channel))
             try:
-                img = io.imread(glob(source)[t])
+                img = io.imread(sorted(glob(source))[t])
                 if rescale == True:  # This is stupid because it is relative to this image, not the series. This will change the intensity scaling factor between images. But I did not choose.
                     img = img.astype(float) / img.max()
                 image.append(img)

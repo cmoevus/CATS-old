@@ -36,6 +36,10 @@ class Particles(Content):
 
     """
 
+    @property
+    def source(self):
+        return self.sources[0]
+
 
 @extensions.append
 class Particle(np.recarray):
@@ -56,6 +60,3 @@ class Particle(np.recarray):
     def __init__(self, *args, **kwargs):
         """Initiate the recarray."""
         super(self, np.recarray).__init__(args, )
-
-    def __repr__(self):
-        return 'Particle from ' + self.source.__repr__()

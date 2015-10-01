@@ -16,6 +16,8 @@ from __future__ import print_function
 from .. import extensions, defaults, sources
 from ..adict import dadict
 from copy import deepcopy
+import pickle
+import os
 
 
 @extensions.append
@@ -133,9 +135,14 @@ class Content(list, dadict):
 
     @processor.setter
     def processor(self, value):
-        """Set the processor and the processor_args attributes."""
+        """
+        Set the processor and the processor_args attributes.
+        Assumptions:
+            - the processor is a function
+            - the first argument is the source, all others are keywords arguments to be filled in by the object.
+        """
         try:
-            self.processor_args = value.func_code.co_varnames[:value.func_code.co_argcount]
+            self.processor_args = value.func_code.co_varnames[1:value.func_code.co_argcount]
             self.__setprop__('processor', value)
         except AttributeError:
             raise ValueError('The selected processor is not a valid function')
@@ -144,4 +151,20 @@ class Content(list, dadict):
         """Process the sources to find content. Erase previous content."""
         list.__init__(self)
         for source in self.sources:
-            self.extend(self.processor(source, **self))
+            self.extend(self.processor(source, **dict([(k, v) for k, v in self.items() if k in self.processor_args])))
+
+    def load(self, f):
+        """
+        Load a Content object from a file or string (pickle).
+
+        Argument:
+            f: file or string to load from.
+        """
+        if os.path.isfile(str(f)) is True:
+            with open(f, 'r') as data:
+                D = pickle.load(data)
+        else:
+            D = pickle.loads(f)
+        self.update([i for i in D.__dict__.iteritems() if i[0] != '_attribs'], D)
+        self._defaults = self._defaults
+        self.extend(D)
