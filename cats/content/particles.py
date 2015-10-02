@@ -20,8 +20,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 import numpy as np
-from .. import extensions, defaults
-from ..adict import dadict
+from .. import extensions
 from ..content import Content
 __all__ = ['Particles', 'Particle']
 
@@ -35,10 +34,6 @@ class Particles(Content):
     Object has attribute sources which is a list of sources (can be shared with Experiment, for example, or other types of content)
 
     """
-
-    @property
-    def source(self):
-        return self.sources[0]
 
 
 @extensions.append
@@ -59,4 +54,15 @@ class Particle(np.recarray):
 
     def __init__(self, *args, **kwargs):
         """Initiate the recarray."""
-        super(self, np.recarray).__init__(args, )
+        super(Particle, self).__init__(args)
+
+    def __reduce__(self):
+        """Prepare the object for pickling. Inherit from the Numpy function and add the object's dictionary to the state."""
+        func, args, state = np.recarray.__reduce__(self)
+        state += (self.__dict__, )
+        return (func, args, state)
+
+    def __setstate__(self, value):
+        """Unpickle the object's state. Apply the state of the Numpy object and add the dictionary of the object. """
+        super(Particle, self).__setstate__(value[0:5])
+        self.__dict__ = value[5]
