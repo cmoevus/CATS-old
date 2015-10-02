@@ -16,7 +16,6 @@ from __future__ import print_function
 from .. import extensions, defaults, sources
 from ..adict import dadict
 from copy import deepcopy
-import numpy as np
 import pickle
 import os
 

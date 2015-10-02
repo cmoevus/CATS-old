@@ -31,8 +31,7 @@ class Particles(Content):
     """
     List of particles detected from different sources.
 
-    Object has attribute sources which is a list of sources (can be shared with Experiment, for example, or other types of content)
-
+    Inherits from cats.content.Content.
     """
 
 
