@@ -319,7 +319,6 @@ class Images(object):
         """Return the path of the images."""
         return 'Images from ' + self.source.__repr__()
 
-
     def _save_attributes(self):
         """Put the attributes from the Images into the object, in view of pickling and unpickling without the source."""
         for attr in [i for i in dir(self)]:
@@ -388,6 +387,8 @@ class ROI(Images):
             s = slice(0, s)
         else:
             s = self._slicify(fallback)
+        if s.step is None:
+            s = slice(s.start, s.stop, 1)
         return s
 
     @property
@@ -412,13 +413,28 @@ class ROI(Images):
 
     @property
     def x(self):
-        """Return the limits of the ROI in x."""
+        """Return the limits of the ROI in x, from the source object."""
         return self._x
 
     @x.setter
     def x(self, value):
         """Set the limits of the ROI in x."""
         self._x = self._slicify(value, self.images.dimensions[0])
+
+    @property
+    def abs_x(self):
+        """Return the limits in x from the source Images, not the source object."""
+        if isinstance(self.images, ROI):
+            f = self.images.abs_x.step
+            stop = min(self.images.dimensions[0], self.x.stop * f)
+            return slice(self.x.start * f, stop, self.x.step * f)
+        else:
+            return self.x
+
+    @abs_x.setter
+    def abs_x(self, value):
+        """abs_x is read-only."""
+        return AttributeError('The attribute "abs_x" is read-only.')
 
     @property
     def y(self):
@@ -431,6 +447,21 @@ class ROI(Images):
         self._y = self._slicify(value, self.images.dimensions[1])
 
     @property
+    def abs_y(self):
+        """Return the limits in y from the source Images, not the source object."""
+        if isinstance(self.images, ROI):
+            f = self.images.abs_y.step
+            stop = min(self.images.dimensions[0], self.y.stop * f)
+            return slice(self.y.start * f, stop, self.y.step * f)
+        else:
+            return self.y
+
+    @abs_y.setter
+    def abs_y(self, value):
+        """abs_y is read-only."""
+        return AttributeError('The attribute "abs_y" is read-only.')
+
+    @property
     def t(self):
         """Return the limits of the ROI in time."""
         return self._t
@@ -439,6 +470,21 @@ class ROI(Images):
     def t(self, value):
         """Set the limits of the ROI in time."""
         self._t = self._slicify(value, self.images.length)
+
+    @property
+    def abs_t(self):
+        """Return the limits in t from the source Images, not the source object."""
+        if isinstance(self.images, ROI):
+            f = self.images.abs_t.step
+            stop = min(self.images.dimensions[0], self.t.stop * f)
+            return slice(self.t.start * f, stop, self.t.step * f)
+        else:
+            return self.t
+
+    @abs_t.setter
+    def abs_t(self, value):
+        """abs_t is read-only."""
+        return AttributeError('The attribute "abs_t" is read-only.')
 
     @property
     def c(self):
@@ -465,7 +511,7 @@ class ROI(Images):
     def __repr__(self):
         """Return the path to the images with the limits."""
         r = 'ROI of {0} with limits:'.format(self.source)
-        for l in ['x', 'y', 't']:
+        for l in ['abs_x', 'abs_y', 'abs_t']:
             v = getattr(self, l)
             r += '\n\t{0} from {1} to {2}, '.format(l, v.start, v.stop)
         c = [self.c] if type(self.c) is int else self.c
