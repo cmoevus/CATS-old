@@ -1,3 +1,18 @@
+"""
+Draw content onto source images.
+
+Module implements drawing of
+    - Particles (list or single)
+
+The module adds the draw() method to the following objects:
+    - Particles
+    - Particle
+
+Arguments of the draw() method:
+    output: the directory in which to write the files. If None, returns the images as a list of arrays.
+    source: the index of the source, in the source list, to draw.
+    rescale: adjust intensity levels to the given tuple (lower bound, upper bound) If True, will adjust the intensity levels to that of the detected particles. Anything else will adjust intensity to the images.
+"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -6,7 +21,6 @@ import numpy as np
 from skimage import io, draw, exposure
 from colorsys import hls_to_rgb
 from random import randrange
-
 
 
 #
@@ -44,7 +58,7 @@ def intensity_scale_from_particles(particles):
 
 
 def choose_scale_for_particles(scale, particles, source):
-    """Finds the ideal scale between user's will and actual limitations."""
+    """Find the ideal scale between user's will and actual limitations."""
     if scale == True:
         try:
             scale = intensity_scale_from_particles(particles)
@@ -90,9 +104,11 @@ def draw_particle(self, output=None, source=0, rescale=True):
     scale = choose_scale_for_particles(rescale, particles, source)
     draw_on_source(source, perimeters, output, scale)
 
+
 #
 # General functions
 #
+
 
 def intensity_scale_from_images(source):
     """Make an intensity scale for skimage.exposure.rescale_intensity based on images."""

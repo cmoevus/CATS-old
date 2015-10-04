@@ -339,7 +339,7 @@ class dadict(adict):
         return self.iterkeys()
 
     def __contains__(self, key):
-        """Look if the adict has an item, hidden or not."""
+        """Look if the dadict has an item, hidden or not."""
         if key[0] == '_':
             return key in self.__dict__
         else:

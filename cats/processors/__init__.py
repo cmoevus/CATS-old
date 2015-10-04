@@ -39,6 +39,7 @@ from types import ModuleType
 import os
 from glob import glob
 import importlib
+from .. import sources
 
 __all__ = []
 

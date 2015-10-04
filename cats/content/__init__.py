@@ -99,30 +99,36 @@ class Content(list, dadict):
             All other input will lead to errors.
             If a single source is used, it does not need to be given as a list.
 
-        A new source is processed into content upon addition to the list of sources. The content of a source that is removed is simultaneously deleted.
+        Sources added at instanciation time will not be automatically processed. Call process() from the object to process them.
+        Sources added post-instanciation will automatically be processed.
+        The content of sources that are removed will automatically be removed.
+        Automated processing will not work with in-place additions (+=).
         """
         return self.__getprop__('sources')
 
     @sources.setter
     def sources(self, value):
         """Add/Set sources."""
-        try:
-            if type(value) is str or isinstance(value, sources.Images):
-                value = [value]
-            for i in range(len(value)):
-                if type(value[i]) is str:
-                    value[i] = sources.Images(value[i])
-            value = set(value)  # Also, elimates doublons
+        # A. Transform input into proper sources
+        if type(value) is str or isinstance(value, sources.Images):
+            value = [value]
+        for i in range(len(value)):
+            if type(value[i]) is str:
+                value[i] = sources.Images(value[i])
+        # B. Find new sources to process and old sources to remove.
+        # Sources added at instanciation time will not be automatically processed.
+        if dadict.__contains__(self, 'sources') == True:
+            value = set(value)
             diff = value.symmetric_difference(self.__getprop__('sources'))
             add = diff.difference(self.__getprop__('sources'))
             remove = diff.difference(value)
+            # B1. Remove old content
             if len(remove) != 0:
                 list.__init__(self, [c for c in self if c.source not in remove])
-        except AttributeError:
-            add = value
-        # for source in add:
-        #     self.extend(self.processor(source, **dict([(k, v) for k, v in self.items() if k in self.processor_args])))
-        self.__setprop__('sources', list(value))
+            # B2. Add new content
+            for source in add:
+                self.extend(self.processor(source, **dict([(k, v) for k, v in self.items() if k in self.processor_args])))
+        self.__setprop__('sources', frozenset(value))
 
     @property
     def processor(self):
@@ -137,6 +143,7 @@ class Content(list, dadict):
     def processor(self, value):
         """
         Set the processor and the processor_args attributes.
+
         Assumptions:
             - the processor is a function
             - the first argument is the source, all others are keywords arguments to be filled in by the object.
