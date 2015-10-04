@@ -510,12 +510,12 @@ class ROI(Images):
 
     def __repr__(self):
         """Return the path to the images with the limits."""
-        r = 'ROI of {0} with limits:'.format(self.source)
-        for l in ['abs_x', 'abs_y', 'abs_t']:
+        r = 'ROI of {0} with '.format(self.source)
+        for n, l in zip(['x', 'y', 't'], ['abs_x', 'abs_y', 'abs_t']):
             v = getattr(self, l)
-            r += '\n\t{0} from {1} to {2}, '.format(l, v.start, v.stop)
+            r += '{0} = ({1}, {2}), '.format(n, v.start, v.stop)
         c = [self.c] if type(self.c) is int else self.c
-        r = r[:-1] + '\n\tchannel{0}'.format('s ' if len(c) > 1 else ' ')
+        r = r[:-2] + ', channel{0}'.format('s ' if len(c) > 1 else ' ')
         for i in c:
             r += str(i) + ', '
         return r[:-2]
