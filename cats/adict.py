@@ -69,7 +69,7 @@ class adict(object):
             value = type(self)(**value)
 
         # Put item in the right dict
-        if attr[0] == '_' or attr in dir(self):
+        if attr[0] == '_' or attr in dir(self.__class__):
             object.__setattr__(self, attr, value)
         else:
             self.__dict__['_attribs'][attr] = value
@@ -222,6 +222,13 @@ class adict(object):
         else:
             D = pickle.loads(f)
         self.update([i for i in D.__dict__.iteritems() if i[0] != '_attribs'], D)
+
+    def __dir__(self):
+        """Return the list of attributes in the object, including those in _attribs."""
+        d = dir(self.__class__)
+        d.extend(self.keys())
+        d.extend(self.__dict__.keys())
+        return sorted(d)
 
 
 class dadict(adict):
