@@ -39,9 +39,9 @@ def particles_perimeters_by_frame(particles, nb_frames, shape):
     frames = [[] for f in range(nb_frames)]
     colors = [get_color() for i in particles]
     for particle, color in zip(particles, colors):
-        sigma = int(np.mean([s['s'] for s in particle]))
+        radius = int(particle['s'].mean() * np.sqrt(2)) + 1
         for s in particle:
-            area = draw.circle_perimeter(int(s['y']), int(s['x']), sigma, shape=shape)
+            area = draw.circle_perimeter(int(s['y']), int(s['x']), radius, shape=shape)
             frames[s['t']].append((area, color))
     return frames
 
