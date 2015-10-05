@@ -89,7 +89,7 @@ def draw_particles(self, output=None, source=0, rescale=True):
     draw_on_source(source, perimeters, output, scale)
 
 
-def draw_particle(self, output=None, source=0, rescale=True):
+def draw_particle(self, output=None, rescale=True):
     """
     Draw the particle on its source images.
 
@@ -103,6 +103,62 @@ def draw_particle(self, output=None, source=0, rescale=True):
     perimeters = particles_perimeters_by_frame(particles, source.length, source.shape)
     scale = choose_scale_for_particles(rescale, particles, source)
     draw_on_source(source, perimeters, output, scale)
+
+
+#
+# Functions related to filaments
+#
+def filaments_by_frames(filaments, nb_frames, shape):
+    """
+    Transform a list of filaments into a list, organized by frames, of lines that hover each particle.
+
+    Arguments:
+        particles: the list of particles
+        nb_frames: the total number of frames in the source.
+        shape: the shape of the source.
+    """
+    frames = [[] for f in range(nb_frames)]
+    colors = [get_color() for i in filaments]
+    for filament, color in zip(filaments, colors):
+        for f in filament:
+            x1, y1, a, l = int(f['x']), int(f['y']), f['a'], f['l'] - 1
+            x2, y2 = int(np.cos(a) * l + x1), int(np.sin(a) * l + y1)
+            x2, y2 = min(shape[1] - 1, x2), min(shape[0] - 1, y2)
+            area = draw.line(y1, x1, y2, x2)
+            frames[f['t']].append((area, color))
+    return frames
+
+
+def draw_filaments(self, output=None, source=0, scale=None):
+    """
+    Draw the filaments from the given source on its images.
+
+    Argument:
+        output: the directory in which to write the files. If None, returns the images as a list of arrays.
+        source: the index of the source, in the source list, to draw.
+        scale: adjust intensity levels to the given tuple (lower bound, upper bound). Anything else will adjust intensity to the images.
+    """
+    source = self.sources[source]
+    filaments = self
+    lines = filaments_by_frames(filaments, source.length, source.shape)
+    scale = intensity_scale_from_images(source) if scale is None else scale
+    draw_on_source(source, lines, output, scale)
+
+
+def draw_filament(self, output=None, scale=None):
+    """
+    Draw the filaments from the given source on its images.
+
+    Argument:
+        output: the directory in which to write the files. If None, returns the images as a list of arrays.
+        source: the index of the source, in the source list, to draw.
+        scale: adjust intensity levels to the given tuple (lower bound, upper bound). Anything else will adjust intensity to the images.
+    """
+    source = self.source
+    filaments = [self]
+    lines = filaments_by_frames(filaments, source.length, source.shape)
+    scale = intensity_scale_from_images(source) if scale is None else scale
+    draw_on_source(source, lines, output, scale)
 
 
 #
@@ -169,4 +225,6 @@ def draw_on_source(source, areas, output=None, scale=(0, 65535)):
 __extension__ = {
     'Particles': {'draw': draw_particles},
     'Particle': {'draw': draw_particle},
+    'Filaments': {'draw': draw_filaments},
+    'Filament': {'draw': draw_filament},
 }

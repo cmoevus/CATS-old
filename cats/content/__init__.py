@@ -129,7 +129,7 @@ class Content(list, dadict):
             # B2. Add new content
             for source in add:
                 self.extend(self.processor(source, **dict([(k, v) for k, v in self.items() if k in self.processor_args])))
-        self.__setprop__('sources', frozenset(value))
+        self.__setprop__('sources', list(value))
 
     @property
     def processor(self):

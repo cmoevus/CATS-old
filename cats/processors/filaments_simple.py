@@ -27,7 +27,6 @@ def constant_filaments(source, blur=0.5, axis=None, keep_unfit=False, max_sigma=
         Filaments object containing Filament objects with minimal columns plus:
             's': the sigma (lateral 'thickness') of the filament, to be multiplied by sqrt(2) (or more, for example +-3*s for confidence intervals of 95%) for the thickness of the filament
     """
-    sigma_f = np.sqrt(2)
     # A. Make a projection
     image = np.zeros(source.shape)
     for img in source.read():
@@ -47,7 +46,7 @@ def constant_filaments(source, blur=0.5, axis=None, keep_unfit=False, max_sigma=
         try:
             fit, cov = sp.optimize.curve_fit(gaussian, x, y, (a, b, c, d))
             values = (fit[1] + w[0], abs(fit[2]))
-            if values[1] * sigma_f <= max_sigma or keep_unfit == True:
+            if values[1] <= max_sigma or keep_unfit == True:
                 projections.append(values)
         except RuntimeError:
             if keep_unfit == True:
@@ -59,9 +58,11 @@ def constant_filaments(source, blur=0.5, axis=None, keep_unfit=False, max_sigma=
     frames = range(source.length)
     dtype = [('x', float), ('y', float), ('l', float), ('a', float), ('s', float), ('t', int)]
     for peak, sigma in projections:
-        f = [0, 0, length, 0, sigma * sigma_f]
+        f = [0, 0, length, 0, sigma]
         f[axis] = peak
-        filaments.append(np.array([tuple(f + [i]) for i in frames], dtype=dtype).view(Filament))
+        f = np.array([tuple(f + [i]) for i in frames], dtype=dtype).view(Filament)
+        f.source = source
+        filaments.append(f)
     return filaments
 
 
