@@ -125,7 +125,7 @@ def fit_gaussian_on_blobs(img, blobs, max_sigma, keep_unfit):
         coords = np.meshgrid(np.arange(data.shape[0]), np.arange(data.shape[1]))
         try:
             fit, cov = curve_fit(gaussian_2d, coords, data.ravel(), p0=(blob[3], blob[0] - x[0], blob[1] - y[0], blob[2], data.min()))
-            spr_blob = [x[0] + fit[1], y[0] + fit[2], abs(fit[3]), fit[0] + fit[4]]
+            spr_blob = [x[0] + fit[1], y[0] + fit[2], abs(fit[3]), fit[0]]
             if len(blob) > 4:
                 spr_blob.extend(blob[4:])
             if x[0] <= spr_blob[0] <= x[1] and y[0] <= spr_blob[1] <= y[1] and spr_blob[2] <= max_sigma:

@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def by_length_filter(self, parameters=None):
+def particles_by_length(self, parameters=None):
     """
     Filter the tracks obtained by link_spots based on parameters set either in self.filtration.by_length, either passed as arguments.
 
