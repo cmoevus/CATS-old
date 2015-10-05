@@ -1,4 +1,3 @@
-#!env /usr/bin/python
 # -*- coding: utf8 -*-
 """
 Handle images from different types of sources.

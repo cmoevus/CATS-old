@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -30,7 +31,10 @@ def find_stationary_particles(source, blur, threshold, keep_unfit=False, max_bli
         max_processes: (int) the maximum number of simultaneous processes. Max and default value is the number of CPUs in the computer.
         verbose: (bool) give information while processing
 
-    Returns a list of particles.
+    Return a Particles object with each Particle within containing the minimal fields and:
+        s: (float) sigma of the Gaussian of the detection
+        a: (float) amplitude of the Gaussian of the detection (intensity at peak)
+
     """
     spots = detect_spots(source, blur, threshold, keep_unfit, max_processes, verbose)
     tracks = link_spots(spots, max_blink, max_disp, verbose)
@@ -72,7 +76,7 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     if verbose is True:
         print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), source.length, time() - t))
 
-    return np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, float, int)}).view(np.recarray)
+    return np.array(spots, dtype={'names': ('x', 'y', 's', 'a', 't'), 'formats': (float, float, float, float, int)}).view(np.recarray)
 
 
 def find_blobs(*args):

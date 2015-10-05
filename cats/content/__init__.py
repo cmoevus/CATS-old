@@ -15,6 +15,7 @@ from __future__ import division
 from __future__ import print_function
 from .. import extensions, defaults, sources
 from ..adict import dadict
+import numpy as np
 from copy import deepcopy
 import pickle
 import os
@@ -172,6 +173,32 @@ class Content(list, dadict):
                 D = pickle.load(data)
         else:
             D = pickle.loads(f)
+        del self.sources
         self.update([i for i in D.__dict__.iteritems() if i[0] != '_attribs'], D)
         self._defaults = self._defaults
         self.extend(D)
+
+
+@extensions.append
+class ContentUnit(np.recarray):
+
+    """
+    More or less abstract class for any type of unary content.
+
+    This class hijacks record arrays from NumPy to ease access to units of 'abstract' content. In that sense, every ContentUnit object and subclass is a numpy.recarray object and inherits all of its properties and goodness. On top of that, ContentUnit objects allow for extra methods and attributes. Attributes will be conserved and reestablished during pickling/unpickling (or saving/loading) the object.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initiate the recarray."""
+        super(ContentUnit, self).__init__(args)
+
+    def __reduce__(self):
+        """Prepare the object for pickling. Inherit from the Numpy function and add the object's dictionary to the state."""
+        func, args, state = np.recarray.__reduce__(self)
+        state += (self.__dict__, )
+        return (func, args, state)
+
+    def __setstate__(self, value):
+        """Unpickle the object's state. Apply the state of the Numpy object and add the dictionary of the object. """
+        super(ContentUnit, self).__setstate__(value[0:5])
+        self.__dict__ = value[5]
