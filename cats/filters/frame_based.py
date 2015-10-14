@@ -20,4 +20,4 @@ def particles_by_length(self, parameters=None):
 
     return n_tracks
 
-__content__ = {'particles': {'filter': {'by_length': by_length_filter}}}
+__filter__ = {'particles': {'min_frames': particles_by_length}}

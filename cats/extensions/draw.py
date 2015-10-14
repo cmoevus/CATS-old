@@ -39,9 +39,12 @@ def particles_perimeters_by_frame(particles, nb_frames, shape):
     frames = [[] for f in range(nb_frames)]
     colors = [get_color() for i in particles]
     for particle, color in zip(particles, colors):
-        radius = int(particle['s'].mean() * np.sqrt(2)) + 1
+        r_x = int(particle['sx'].mean() * np.sqrt(2)) + 2
+        r_y = int(particle['sy'].mean() * np.sqrt(2)) + 2
+        # r = max(r_x, r_y)
         for s in particle:
-            area = draw.circle_perimeter(int(s['y']), int(s['x']), radius, shape=shape)
+            area = draw.ellipse_perimeter(int(s['y']), int(s['x']), r_y, r_x, shape=shape)
+            # area = draw.circle_perimeter(int(s['y']), int(s['x']), r, shape=shape)
             frames[s['t']].append((area, color))
     return frames
 
@@ -60,10 +63,12 @@ def intensity_scale_from_particles(particles):
 def choose_scale_for_particles(scale, particles, source):
     """Find the ideal scale between user's will and actual limitations."""
     if scale == True:
+        scale = intensity_scale_from_images(source)
         try:
-            scale = intensity_scale_from_particles(particles)
+            scale_p = intensity_scale_from_particles(particles)
+            scale = (max(scale[0], scale_p[0]), min(scale[1], scale_p[1]))
         except:
-            scale = intensity_scale_from_images(source)
+            pass
     try:
         l = len(scale)
         if l != 2:

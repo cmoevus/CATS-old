@@ -316,7 +316,7 @@ class Images(object):
 
     def __repr__(self):
         """Return the path of the images."""
-        return 'Images from ' + self.source.__repr__()
+        return 'Images from ' + self.path.__repr__()
 
     def _save_attributes(self):
         """Put the attributes from the Images into the object, in view of pickling and unpickling without the source."""
@@ -342,6 +342,13 @@ class Images(object):
         except:
             pass
 
+    # def contains(self, obj):
+    #     """Check if the given object is within this one."""
+    #     return same_source(self, obj)
+    #
+    # def is_within(self, obj):
+    #     """Check if the given object is within this one."""
+
 
 @extensions.append
 class ROI(Images):
@@ -356,7 +363,7 @@ class ROI(Images):
         x: slice (or list) of the initial and final (excluded) pixel to select, in the x axis. If None, selects all pixels.
         y: slice (or list) of the initial and final (excluded) pixel to select, in the y axis. If None, selects all pixels.
         t: slice (or list) of the initial and final (excluded) frame to select. If None, selects all frames.
-        c: channels to use (indice of the first channel is 0). Only applies to image files. Not TIF dirs.  If None, selects all channels.
+        c: channels to use (indice of the first channel is 0). If None, selects all channels.
     """
 
     def __init__(self, images, x=None, y=None, t=None, c=None):
@@ -392,13 +399,32 @@ class ROI(Images):
 
     @property
     def source(self):
-        """Return the path to images."""
+        """Return the source object of the images."""
         return self.images.source
 
     @source.setter
     def source(self, source):
         """Return an error: source of an ROI is read-only."""
         raise AttributeError("The source of a ROI is read-only. Directly change the source from the original Images object.")
+
+    @property
+    def path(self):
+        """Return the path to the images."""
+        path = self.images.path
+        channels = [self.c] if type(self.c) is int else self.c
+        if type(path) is dict and len(channels) != len(path):
+            if len(channels) == 1:
+                path = path[self.source.channels[channels[0]]]
+            else:
+                paths = dict()
+                for c in channels:
+                    paths[c] = path[self.source.channels[c]]
+                path = paths
+        return path
+
+    @path.setter
+    def path(self, value):
+        raise AttributeError("The path of a ROI is read-only. Directly change the source from the original Images object.")
 
     @property
     def dimensions(self):
@@ -509,7 +535,7 @@ class ROI(Images):
 
     def __repr__(self):
         """Return the path to the images with the limits."""
-        r = 'ROI of {0} with '.format(self.source)
+        r = 'ROI of {0} with '.format(self.path)
         for n, l in zip(['x', 'y', 't'], ['abs_x', 'abs_y', 'abs_t']):
             v = getattr(self, l)
             r += '{0} = ({1}, {2}), '.format(n, v.start, v.stop)
@@ -534,3 +560,22 @@ def globify(path):
     if os.path.isdir(path):
         path = path + '*' if path[-1] == '/' else path + '/*'
     return path
+
+
+def same_source(a, b):
+    """
+    Check if two source objects (Images, ROI) refer to the same source of images.
+
+    Arguments:
+        a, b: the objects to compare
+    """
+    return a.source.path == b.source.path
+
+
+def same_roi(a, b):
+    """
+    Check if two source objects refer to the same source of images and have the same limits.
+
+    Arguments:
+        a, b: the objects to compare
+    """

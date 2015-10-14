@@ -118,7 +118,7 @@ class Content(list, dadict):
                 value[i] = sources.Images(value[i])
         # B. Find new sources to process and old sources to remove.
         # Sources added at instanciation time will not be automatically processed.
-        if dadict.__contains__(self, 'sources') == True:
+        if dadict.__contains__(self, 'sources') == True and len(self.sources) != 0:
             value = set(value)
             diff = value.symmetric_difference(self.__getprop__('sources'))
             add = diff.difference(self.__getprop__('sources'))

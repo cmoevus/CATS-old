@@ -1,16 +1,19 @@
 # -*- coding: utf8 -*-
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 from collections import Counter
 
 
 def survival_plot(self):
     """Return a survival plot."""
-    tracks = self.get_tracks('t')
-    data = Counter([(max(track) - min(track)) / self.framerate for track in tracks if max(track) != self.source.length - 1])
-    x, y, n, lost = list(), list(), len(tracks), 0
+    data = Counter([(max(p['t']) - min(p['t'])) / float(self.framerate) for p in self if p['t'].max() < p.source.length - self.max_blink])
+    n, lost = len(self), 0
+    x, y, = [0], [1]
     for t, tn in sorted(data.items()):
         lost += tn
         x.append(t)
-        y.append(n - lost)
+        y.append((n - lost) / n)
     return x, y
 
-__extension__ = {'Experiment': {'survival_plot': survival_plot}}
+__extension__ = {'Particles': {'survival_plot': survival_plot}}
