@@ -22,31 +22,22 @@ def find_noise(source, window=None):
         window = source.length - 1
     lower_lim, noises = 0, list()
     for upper_lim in range(window, source.length, window):
+        # A. Build the mean image
+        img = np.zeros(source.shape)
+        for f in range(lower_lim, upper_lim):
+            img += source.get(f) / window
+
+        # B. Fit
         try:
-            # A. Build the mean image
-            img = np.zeros(source.shape)
-            for f in range(lower_lim, upper_lim):
-                img += source.get(f) / window
-
-            # B. Use Scott's normal reference rule for the bin width and plot the histogram
-            data = img.ravel()
-            binwidth = 3.5 * np.std(data) / len(data)**(1 / 3)
-            bins = ceil((data.max() - data.min()) / binwidth)
-            y, x = np.histogram(data, bins)
-            dx = (x[1] - x[0]) / 2
-            x_centered = [i + dx for i in x][:-1]
-
-            # C. Fit the histogram to the expected normal distribution
-            p0 = y.max(), x_centered[np.where(y == y.max())[0][0]], np.std(data)
-            fit, cov = sp.optimize.curve_fit(gaussian, x_centered, y, p0=p0)
-
-            # D. Write down
-            for f in range(lower_lim, upper_lim):
-                noises.append((f, fit[1], fit[2]))
+            fit, cov = fit_noise(img)
         except ValueError:
             pass
 
-        # Next loop
+        # C. Write down
+        for f in range(lower_lim, upper_lim):
+            noises.append((f, fit[1], fit[2]))
+
+        # D. Update for the next loop
         lower_lim = upper_lim
 
     dtype = [('t', int), ('m', float), ('s', float)]
@@ -55,6 +46,23 @@ def find_noise(source, window=None):
     N.window = window
     N.source = source
     return N
+
+
+def fit_noise(img):
+    """Fits the noise on the image."""
+    # A. Use Scott's normal reference rule for the bin width and plot the histogram
+    data = img.ravel()
+    binwidth = 3.5 * np.std(data) / len(data)**(1 / 3)
+    bins = ceil((data.max() - data.min()) / binwidth)
+    y, x = np.histogram(data, bins)
+    dx = (x[1] - x[0]) / 2
+    x_centered = [i + dx for i in x][:-1]
+
+    # B. Fit the histogram to the expected normal distribution
+    p0 = y.max(), x_centered[np.where(y == y.max())[0][0]], np.std(data)
+    fit, cov = sp.optimize.curve_fit(gaussian, x_centered, y, p0=p0)
+
+    return fit, cov
 
 
 def gaussian(x, A, m, s):
@@ -66,7 +74,6 @@ def gaussian(x, A, m, s):
         A: the amplitude
         m: the mean
         s: the standard deviation
-        n: the baseline noise
     """
     return A * np.e**((-(x - m)**2) / (2 * s**2))
 

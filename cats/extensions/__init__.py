@@ -11,10 +11,10 @@ All files (modules) in the extensions subpackage must contain an '__extension__'
 Where 'method' is the name of the function as called from the object, and 'func', the function in the extension's file.
 """
 
+from types import ModuleType
 import os
 from glob import glob
 import importlib
-from ..adict import adict
 
 __all__ = ['append']
 
@@ -24,16 +24,20 @@ for f in glob(os.path.dirname(os.path.realpath(__file__)) + '/[!_]*.py'):
     for Class, methods in module.__extension__.items():
         if Class not in __all__:
             __all__.append(Class)
-            globals()[Class] = adict()
+            globals()[Class] = ModuleType(Class)
         for method, func in methods.items():
-            globals()[Class][method] = func
+            setattr(globals()[Class], method, func)
 
-    del f, module, name, Class, methods, method, func
+try:
+    del f, module, name, Class, methods, method, func, ModuleType, os, glob, importlib
+except:
+    pass
 
 
 def append(Class):
     """Decorate a class with its extensions."""
     if Class.__name__ in globals():
-        for name, func in globals()[Class.__name__].items():
-            setattr(Class, name, func)
+        for name in dir(globals()[Class.__name__]):
+            if name != '__doc__' and name != '__name__':
+                setattr(Class, name, getattr(globals()[Class.__name__], name))
     return Class

@@ -54,6 +54,6 @@ for f in glob(os.path.dirname(os.path.realpath(__file__)) + '/[!_]*.py'):
                 setattr(globals()[content], name, processor)
 
 try:
-    del f, module, name, content, processors, processor
+    del f, module, name, content, processors, processor, ModuleType, os, glob, importlib
 except:
     pass
