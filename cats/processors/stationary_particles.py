@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 from ..content.particles import Particles, Particle
 from .noise_simple import fit_noise
 
-__all__ = ['find_stationary_particles', 'detect_spots', 'find_blobs', 'fit_2dgaussian_on_blobs', 'link_spots', 'gaussian_2d']
+__all__ = ['find_stationary_particles', 'detect_spots', 'find_blobs', 'link_spots', 'gaussian_2d']
 
 
 def find_stationary_particles(source, blur, threshold, keep_unfit=False, max_blink=25, max_disp=(1, 1), max_processes=None, verbose=True):
@@ -67,8 +67,8 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     # Multiprocess through it
     t = time()
     spots, pool = list(), Pool(max_processes)
-    for blobs in iter(find_blobs(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())):
-    # for blobs in pool.imap(find_blobs, iter((i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read()))):
+    # for blobs in iter(find_blobs(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())):
+    for blobs in pool.imap(find_blobs, iter((i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read()))):
         if verbose == True:
             print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][-1] if len(blobs) > 0 else 'i', time() - t), end='')
             stdout.flush()
@@ -102,10 +102,56 @@ def find_blobs(*args):
     blobs = list()
     for y, x, s in b:
         blobs.append((x, y, s, image[y][x], frame))
-    return fit_blobs(image, blobs, keep_unfit)
+    return fit_blobs_moments(image, blobs, keep_unfit)
 
 
-def fit_blobs_curvefit(img, blobs, keep_unfit):
+def fit_blobs_moments(img, blobs, keep_unfit):
+    """
+    Find the center of mass of the blob.
+
+    following indications from:
+    http://scitation.aip.org/content/aip/journal/rsi/78/5/10.1063/1.2735920
+    """
+    spr_blobs = list()
+    for blob in blobs:
+
+        # A. Get an ROI of the image
+        r = max(blob[2] + 1 * 2, 3)
+        ylim, xlim = img.shape
+        slice_y = slice(max(0, int(floor(blob[1] - r))), min(int(ceil(blob[1] + r)) + 1, ylim))
+        slice_x = slice(max(0, int(floor(blob[0] - r))), min(int(ceil(blob[0] + r)) + 1, xlim))
+        x_values, y_values = img[slice_y, blob[0]], img[blob[1], slice_x]
+        x_min, y_min = x_values.min(), y_values.min()
+
+        # B. Find the center of mass
+        x = np.sum([(p + 0.5) * i for p, i in enumerate(x_values)]) / np.sum(x_values)
+        y = np.sum([(p + 0.5) * i for p, i in enumerate(y_values)]) / np.sum(y_values)
+
+        # C. Get the parameters
+        noise = (x_min + y_min) / 2
+        x0, y0 = x + slice_x.start, y + slice_y.start
+        A = img[int(y + slice_y.start), int(x + slice_x.start)]
+        sx = np.std([j for i, v in enumerate(x_values) for j in [i] * (v - x_min)])
+        sy = np.std([j for i, v in enumerate(y_values) for j in [i] * (v - y_min)])
+        spr_blobs.append((x0, y0, sx, sy, A - noise, A, blob[4]))
+
+        # # Show fit
+        # print((round(x, 2), round(y, 2), round(sx, 2), round(sy, 2), A, blob[3]))
+        # plt.figure()
+        # plt.subplot(1, 2, 1)
+        # plt.bar(range(0, len(x_values)), x_values, width=1)
+        # xf = np.linspace(0, len(x_values), len(x_values) * 10)
+        # plt.plot(xf, gaussian_noise(xf, A, x, sx, noise), 'r')
+        # plt.subplot(1, 2, 2)
+        # plt.bar(range(0, len(y_values)), y_values, width=1)
+        # yf = np.linspace(0, len(y_values), len(y_values) * 10)
+        # plt.plot(yf, gaussian_noise(yf, A, y, sy, noise), 'r')
+        # plt.show()
+
+    return spr_blobs
+
+
+def fit_blobs_curvefit_1D(img, blobs, keep_unfit):
     """
     Fit 2D Gaussians by splitting them in two 1D gaussians.
     """
@@ -131,40 +177,42 @@ def fit_blobs_curvefit(img, blobs, keep_unfit):
 
         # B2. Fit the blob on the ROI
         try:
-            # fit_x, pcov_x = curve_fit(gaussian, np.arange(0.5, len(x_values) + 0.5), x_values, p0=(blob[3], x0, blob[2], x_values.min()))
-            # fit_y, pcov_y = curve_fit(gaussian, np.arange(0.5, len(y_values) + 0.5), y_values, p0=(blob[3], y0, blob[2], y_values.min()))
-            fit_x = fit_iterative(np.arange(0.5, len(x_values) + 0.5), x_values)
-            fit_y = fit_iterative(np.arange(0.5, len(y_values) + 0.5), y_values)
+            fit_x, pcov_x = curve_fit(gaussian, np.arange(0.5, len(x_values) + 0.5), x_values, p0=(blob[3], x0, blob[2], x_values.min()))
+            fit_y, pcov_y = curve_fit(gaussian, np.arange(0.5, len(y_values) + 0.5), y_values, p0=(blob[3], y0, blob[2], y_values.min()))
         except RuntimeError:
             if keep_unfit == True:
                 spr_blobs.append((blob[0], blob[1], blob[2], blob[2], blob[3] - noise, blob[3], blob[4]))
             continue
 
         # B3. Extract the data out of the ROI and save it.
-        # cov_x, cov_y = np.diag(pcov_x), np.diag(pcov_y)
-        # A = sorted([(cov_x[0], fit_x[0]), (cov_y[0], fit_y[0])])[0][1]
-        A = sorted([((fit_x[0] - blob[3])**2 / blob[3], fit_x[0]), ((fit_y[0] - blob[3])**2 / blob[3], fit_y[0])])[0][1]
+        cov_x, cov_y = np.diag(pcov_x), np.diag(pcov_y)
+        A = sorted([(cov_x[0], fit_x[0]), (cov_y[0], fit_y[0])])[0][1]
         x0, y0, sx, sy = fit_x[1] + slice_x.start, fit_y[1] + slice_y.start, abs(fit_x[2]), abs(fit_y[2])
         spr_blobs.append((x0, y0, sx, sy, A, blob[3], blob[4]))
 
-        # Show fit
-        plt.figure()
-        plt.subplot(1, 2, 1)
-        plt.bar(range(0, len(x_values)), x_values, width=1)
-        xf = np.linspace(0, len(x_values), len(x_values) * 10)
-        plt.plot(xf, gaussian(xf, *fit_x), 'r')
-        plt.subplot(1, 2, 2)
-        plt.bar(range(0, len(y_values)), y_values, width=1)
-        yf = np.linspace(0, len(y_values), len(y_values) * 10)
-        plt.plot(yf, gaussian(yf, *fit_y), 'r')
-        plt.show()
+        # # Show fit
+        # plt.figure()
+        # plt.subplot(1, 2, 1)
+        # plt.bar(range(0, len(x_values)), x_values, width=1)
+        # xf = np.linspace(0, len(x_values), len(x_values) * 10)
+        # plt.plot(xf, gaussian(xf, *fit_x), 'r')
+        # plt.subplot(1, 2, 2)
+        # plt.bar(range(0, len(y_values)), y_values, width=1)
+        # yf = np.linspace(0, len(y_values), len(y_values) * 10)
+        # plt.plot(yf, gaussian(yf, *fit_y), 'r')
+        # plt.show()
 
     return spr_blobs
 
 
-def fit_blobs(img, blobs, keep_unfit):
+def fit_blobs_linalg(img, blobs, keep_unfit):
     """
     Fit 2D Gaussians by splitting them in two 1D gaussians.
+
+    Implementation of the methods described in
+        Hongwei Guo, "A Simple Algorithm for Fitting a Gaussian Function"
+        IEEE Signal Processing Magazine, September 2011, pp. 134--137
+    Author of the implementation: Stefan van der Walt, 2011
     """
     # A. Get the noise value, to provide an estimated amplitude for unfit particles
     try:
@@ -187,8 +235,6 @@ def fit_blobs(img, blobs, keep_unfit):
 
         # B2. Fit the blob on the ROI
         try:
-            # fit_x, pcov_x = curve_fit(gaussian, np.arange(0.5, len(x_values) + 0.5), x_values, p0=(blob[3], x0, blob[2], x_values.min()))
-            # fit_y, pcov_y = curve_fit(gaussian, np.arange(0.5, len(y_values) + 0.5), y_values, p0=(blob[3], y0, blob[2], y_values.min()))
             fit_x = fit_iterative(np.arange(0.5, len(x_values) + 0.5), x_values, N=10)
             fit_y = fit_iterative(np.arange(0.5, len(y_values) + 0.5), y_values, N=10)
         except RuntimeError:
@@ -197,8 +243,6 @@ def fit_blobs(img, blobs, keep_unfit):
             continue
 
         # B3. Extract the data out of the ROI and save it.
-        # cov_x, cov_y = np.diag(pcov_x), np.diag(pcov_y)
-        # A = sorted([(cov_x[0], fit_x[0]), (cov_y[0], fit_y[0])])[0][1]
         A = sorted([((fit_x[0] - blob[3])**2 / blob[3], fit_x[0]), ((fit_y[0] - blob[3])**2 / blob[3], fit_y[0])])[0][1]
         x0, y0, sx, sy = fit_x[1] + slice_x.start, fit_y[1] + slice_y.start, abs(fit_x[2]), abs(fit_y[2])
         spr_blobs.append((x0, y0, sx, sy, A, blob[3], blob[4]))
@@ -327,7 +371,7 @@ def fit_iterative(x, y, F=0, weighted=True, N=10):
     return np.real(A), np.real(mu), np.real(sigma)
 
 
-def fit_2dgaussian_on_blobs(img, blobs, keep_unfit):
+def fit_blobs_curvefit_2D(img, blobs, keep_unfit):
     """
     Fit a Gaussian curve on the blobs in an image. Return the given list of blobs with the fitted values.
 
@@ -465,9 +509,14 @@ def gaussian_noise(x, A, m, s, n):
         s: the standard deviation
         n: the baseline noise
     """
-    if A < n:
-        return np.zeros(x.shape)
-    return A * np.e**((-(x - m)**2) / (2 * s**2)) + n
+    return (A - n) * np.e**((-(x - m)**2) / (2 * s**2)) + n
+
+
+def fixed_gaussian(A, m):
+    """Return a Gaussian function with all parameters but std fixed."""
+    def fg(x, s, n):
+        return A * np.e**((-(x - m)**2) / (2 * s**2)) + n
+    return fg
 
 
 def gaussian(x, A, m, s):
