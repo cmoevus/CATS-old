@@ -16,6 +16,7 @@ import networkx as nx
 from matplotlib import pyplot as plt
 from ..content.particles import Particles, Particle
 from .noise_simple import fit_noise
+from ..utils import graph
 
 __all__ = ['find_stationary_particles', 'detect_spots', 'find_blobs', 'link_spots', 'gaussian_2d']
 
@@ -77,9 +78,9 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     pool.join()
 
     if verbose is True:
-        print('\nFound {0} spots in {1} frames in {2:.2f}s'.format(len(spots), source.length, time() - t))
+        print('\rFound {0} spots in {1} frames in {2:.2f}s{3}'.format(len(spots), source.length, time() - t, " " * 30), end='\n')
 
-    return np.array(spots, dtype={'names': ('x', 'y', 'sx', 'sy', 'a', 'i', 't'), 'formats': (float, float, float, float, float, int, int)}).view(np.recarray)
+    return np.array(spots, dtype={'names': ('x', 'y', 'sx', 'sy', 'i', 't'), 'formats': (float, float, float, float, int, int)}).view(np.recarray)
 
 
 def find_blobs(*args):
@@ -128,12 +129,11 @@ def fit_blobs_moments(img, blobs, keep_unfit):
         y = np.sum([(p + 0.5) * i for p, i in enumerate(y_values)]) / np.sum(y_values)
 
         # C. Get the parameters
-        noise = (x_min + y_min) / 2
         x0, y0 = x + slice_x.start, y + slice_y.start
-        A = img[int(y + slice_y.start), int(x + slice_x.start)]
+        A = img[min(int(y0), ylim - 1), min(int(x0), xlim - 1)]
         sx = np.std([j for i, v in enumerate(x_values) for j in [i] * (v - x_min)])
         sy = np.std([j for i, v in enumerate(y_values) for j in [i] * (v - y_min)])
-        spr_blobs.append((x0, y0, sx, sy, A - noise, A, blob[4]))
+        spr_blobs.append((x0, y0, sx, sy, A, blob[4]))
 
         # # Show fit
         # print((round(x, 2), round(y, 2), round(sx, 2), round(sy, 2), A, blob[3]))
@@ -403,7 +403,7 @@ def fit_blobs_curvefit_2D(img, blobs, keep_unfit):
     return spr_blobs
 
 
-def link_spots(spots, max_blink, max_disp, verbose):
+def link_spots_simple(spots, max_blink, max_disp, verbose):
     """Correlate spots through time as tracks (or particles)."""
     # Reorganize spots by frame and prepare the Graph
     G = nx.DiGraph()
@@ -413,7 +413,7 @@ def link_spots(spots, max_blink, max_disp, verbose):
         frames[spot['t']].append((spot['x'], spot['y'], i))
         G.add_node(i, frame=spot['t'])
 
-    # Make optimal pairs for all acceptable frame intervals (as defined in max_blink)
+    # Find optimal pairs for all acceptable frame intervals (as defined in max_blink)
     for delta in range(1, max_blink + 1):
         if verbose is True:
             print('\rDelta frames: {0}'.format(delta), end='')
@@ -446,10 +446,10 @@ def link_spots(spots, max_blink, max_disp, verbose):
     # Only keep the tracks that are not ambiguous (1 spot per frame max)
     tracks = list()
     for track in nx.weakly_connected_component_subgraphs(G):
-        t_frames = np.array(sorted([(s, spots[s]['t']) for s in track], key=lambda a: a[1]))
+        t_frames = [spots[s]['t'] for s in track]
 
         # Good tracks
-        if len(t_frames[:, 1]) == len(set(t_frames[:, 1])):
+        if len(t_frames) == len(set(t_frames)):
             tracks.append(sorted(track.nodes(), key=lambda s: spots[s]['t']))
 
         # Ambiguous tracks
@@ -479,6 +479,106 @@ def link_spots(spots, max_blink, max_disp, verbose):
         print('\nFound {0} particles'.format(len(tracks)))
 
     return tracks
+
+
+def link_spots(spots, max_blink, max_disp, verbose):
+    """Correlate spots through time as tracks (or particles)."""
+    start_time = time()
+    # Reorganize spots by frame and prepare the Graph
+    G = nx.DiGraph()
+    n_frames = max(spots['t']) + 1
+    frames = [[] for f in range(n_frames)]
+    for i, spot in enumerate(spots):
+        frames[spot['t']].append((spot['x'], spot['y'], i))
+        G.add_node(i, frame=spot['t'])
+
+    # Find optimal pairs for all acceptable frame intervals (as defined in max_blink)
+    for delta in range(1, max_blink + 1):
+        if verbose is True:
+            print('\rDelta frames: {0}'.format(delta), end='')
+            stdout.flush()
+        for f in range(n_frames - delta):
+            if len(frames[f]) == 0 or len(frames[f + delta]) == 0:
+                continue
+            # Matrix of distances between spots
+            d = np.abs(np.array(frames[f])[:, np.newaxis, :2] - np.array(frames[f + delta])[:, :2])
+
+            # Filter out the spots with distances that excess max_disp in x and/or y
+            disp_filter = d - max_disp >= 0
+            disp_mask = np.logical_or(disp_filter[:, :, 0], disp_filter[:, :, 1])
+
+            # Reduce to one dimension
+            d = np.sqrt(d[:, :, 0]**2 + d[:, :, 1]**2)
+
+            # Find the optimal pairs
+            f_best = d != np.min(d, axis=0)
+            fd_best = (d.T != np.min(d, axis=1)).T
+            mask = np.logical_and(f_best, fd_best)
+            mask = np.logical_or(mask, disp_mask)
+            pairs = ma.array(d, mask=mask)
+
+            # Organize in pairs, or edges, for graph purposes
+            for s1, s2 in np.array(np.where(pairs.mask == False)).T:
+                G.add_edge(frames[f][s1][2], frames[f + delta][s2][2],
+                           weight=d[s1][s2])
+
+    # Resolve ambiguities i. e. nodes with more than one incoming or outgoing edge
+    if verbose is True:
+        print('\rResolving ambiguities...', end='')
+        stdout.flush()
+    tracks = list()
+    for track in nx.weakly_connected_component_subgraphs(G):
+        track_sort = sorted([s for s in track.nodes()], key=lambda a: spots[a]['t'])
+        track_reduced = graph.transitive_reduction(track, order=track_sort)
+        for n, i in track_reduced.in_degree().items():
+            if i > 1:
+                keep_nearest_neighbor_only(track, track_reduced, n, track_reduced.predecessors(n))
+        for n, i in track_reduced.out_degree().items():
+            if i > 1:
+                keep_nearest_neighbor_only(track, track_reduced, n, track_reduced.successors(n))
+
+        for t in nx.weakly_connected_components(track_reduced):
+            tracks.append(sorted(t, key=lambda s: spots[s]['t']))
+        # Draw the graph
+        # n_per_frame = dict()
+        # for s in track.nodes():
+        #     f = spots[s]['t']
+        #     if f not in n_per_frame:
+        #         n_per_frame[f] = []
+        #     n_per_frame[f].append(s)
+        # plt.figure()
+        # plt.xlabel('Frame')
+        # nodes = dict()
+        # for f, ss in n_per_frame.items():
+        #     for y, s in enumerate(ss):
+        #         plt.text(s, f, y + 1)
+        #         nodes[s] = (f, y  + 1)
+        # for e in track_reduced.edges():
+        #     n0, n1 = nodes[e[0]], nodes[e[1]]
+        #     plt.plot([n0[0], n1[0]], [n0[1], n1[1]])
+        # plt.show()
+
+    if verbose is True:
+        print('\rFound {0} particles in {1:.2f}s.{2}'.format(len(tracks), time() - start_time, " " * 15), end='\n')
+
+    return tracks
+
+
+def keep_nearest_neighbor_only(track, track_reduced, n, a):
+    """
+    Delete the edges from a DiGraph that are not the 'best' neighbors.
+
+    Arguments:
+        track: (nx.DiGraph) the track containing the nodes
+        track_reduced: (nx.DiGraph)
+        n: the main node
+        a: list of competing nodes
+    """
+    neighbors = set(track.predecessors(n) + track.successors(n))
+    common_neighbors = sorted([(len(neighbors.intersection(track.predecessors(i) + track.successors(i))), i) for i in a])
+    for l, a_n in common_neighbors[:-1]:
+        track_reduced.remove_edge(*sorted([n, a_n]))
+        track.remove_edge(*sorted([n, a_n]))
 
 
 def gaussian_2d(coords, A, x0, y0, s, B):
