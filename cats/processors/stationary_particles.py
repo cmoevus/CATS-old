@@ -21,7 +21,7 @@ from ..utils import graph
 __all__ = ['find_stationary_particles', 'detect_spots', 'find_blobs', 'link_spots', 'gaussian_2d']
 
 
-def find_stationary_particles(source, blur, threshold, keep_unfit=False, max_blink=25, max_disp=(1, 1), max_processes=None, verbose=True):
+def find_stationary_particles(source, blur, threshold, keep_unfit=False, max_blink=25, max_disp=(2, 2), max_processes=None, verbose=True):
     """
     Find the location of particles that do not move much in the given source.
 

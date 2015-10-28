@@ -13,11 +13,9 @@ These directives (on top of the other general Howtos in the doc from cats.proces
     - The attribute 'source' of each Particle returns its source object (the one given to the processor)
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 from .. import extensions
-from ..content import Content, ContentUnit
+from .content import Content, ContentUnit
 __all__ = ['Particles', 'Particle']
 
 

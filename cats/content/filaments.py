@@ -16,7 +16,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from .. import extensions
-from ..content import Content, ContentUnit
+from .content import Content, ContentUnit
 __all__ = ['Filaments', 'Filament']
 
 

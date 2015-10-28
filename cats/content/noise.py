@@ -2,7 +2,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from ..content import ContentUnit
+from .content import ContentUnit
 
 
 class Noise(ContentUnit):
