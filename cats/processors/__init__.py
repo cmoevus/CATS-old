@@ -36,24 +36,19 @@ To increase interoperability between content modules and to keep a 'cats' logic,
 """
 
 from types import ModuleType
-import os
-from glob import glob
-import importlib
+from cats.utils.imports import import_submodules
 
 __all__ = []
 
-for f in glob(os.path.dirname(os.path.realpath(__file__)) + '/[!_]*.py'):
-    name = os.path.splitext(os.path.basename(f))[0]
-    module = importlib.import_module('cats.processors.' + name)
-    if '__processor__' in vars(module):
-        for content, processors in module.__processor__.items():
+submodules = import_submodules(__file__)
+__all__.extend(submodules.keys())
+for submod in submodules.values():
+    if '__processor__' in vars(submod):
+        for content, processors in submod.__processor__.items():
             if content not in __all__:
                 __all__.append(content)
                 globals()[content] = ModuleType(content)
             for name, processor in processors.items():
                 setattr(globals()[content], name, processor)
-
-try:
-    del f, module, name, content, processors, processor, ModuleType, os, glob, importlib
-except:
-    pass
+        del submod, name, content, processors, processor,
+del import_submodules, submodules, ModuleType

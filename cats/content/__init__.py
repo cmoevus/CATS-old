@@ -10,14 +10,11 @@ Types of content can be defined by user functions. For example, someone willing 
 
 """
 
-import os
-import glob
-import importlib
-
-# Import all submodules
-__all__ = []
-for f in glob.glob(os.path.dirname(os.path.realpath(__file__)) + '/[!_]*.py'):
-    name = os.path.splitext(os.path.basename(f))[0]
-    __all__.append('cats.content.' + name)
-    module = importlib.import_module('cats.content.' + name)
-print(__all__)
+from cats.utils.imports import import_submodules
+for submod in import_submodules(__file__).values():
+    if '__all__' in vars(submod):
+        for a in submod.__all__:
+            globals()[a] = getattr(submod, a)
+            del a
+    del submod
+del import_submodules

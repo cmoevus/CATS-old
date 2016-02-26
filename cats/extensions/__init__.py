@@ -12,26 +12,23 @@ Where 'method' is the name of the function as called from the object, and 'func'
 """
 
 from types import ModuleType
-import os
-from glob import glob
 import importlib
+from cats.utils.imports import import_submodules
 
 __all__ = ['append']
 
-for f in glob(os.path.dirname(os.path.realpath(__file__)) + '/[!_]*.py'):
-    name = os.path.splitext(os.path.basename(f))[0]
-    module = importlib.import_module('cats.extensions.' + name)
-    for Class, methods in module.__extension__.items():
-        if Class not in __all__:
-            __all__.append(Class)
-            globals()[Class] = ModuleType(Class)
-        for method, func in methods.items():
-            setattr(globals()[Class], method, func)
-
-try:
-    del f, module, name, Class, methods, method, func, ModuleType, os, glob, importlib
-except:
-    pass
+submodules = import_submodules(__file__)
+__all__.extend(submodules.keys())
+for submod in submodules.values():
+    if '__extension__' in vars(submod):
+        for Class, methods in submod.__extension__.items():
+            if Class not in __all__:
+                __all__.append(Class)
+                globals()[Class] = ModuleType(Class)
+            for method, func in methods.items():
+                setattr(globals()[Class], method, func)
+        del submod, Class, methods, method, func
+del import_submodules, submodules
 
 
 def append(Class):

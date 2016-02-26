@@ -13,14 +13,11 @@ Arguments of the draw() method:
     source: the index of the source, in the source list, to draw.
     rescale: adjust intensity levels to the given tuple (lower bound, upper bound) If True, will adjust the intensity levels to that of the detected particles. Anything else will adjust intensity to the images.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import numpy as np
 from skimage import io, draw, exposure
-from colorsys import hls_to_rgb
-from random import randrange
+from ..utils import colors
 
 
 #
@@ -37,8 +34,9 @@ def particles_perimeters_by_frame(particles, nb_frames, shape):
         shape: the shape of the source.
     """
     frames = [[] for f in range(nb_frames)]
-    colors = [get_color() for i in particles]
-    for particle, color in zip(particles, colors):
+    colours = [colors.random() for i in particles]
+    for particle, color in zip(particles, colours):
+        # print(particle.x.mean(), color)
         r_x = int(particle['sx'].mean() * np.sqrt(2)) + 2
         r_y = int(particle['sy'].mean() * np.sqrt(2)) + 2
         # r = max(r_x, r_y)
@@ -123,8 +121,8 @@ def filaments_by_frames(filaments, nb_frames, shape):
         shape: the shape of the source.
     """
     frames = [[] for f in range(nb_frames)]
-    colors = [get_color() for i in filaments]
-    for filament, color in zip(filaments, colors):
+    colours = [colors.random() for i in filaments]
+    for filament, color in zip(filaments, colours):
         for f in filament:
             x1, y1, a, l = int(f['x']), int(f['y']), f['a'], f['l'] - 1
             x2, y2 = int(np.cos(a) * l + x1), int(np.sin(a) * l + y1)
@@ -188,11 +186,6 @@ def grayscale_to_rgb(grayscale, max_i=65535):
     rgb[..., :] = grayscale / max_i * 255
     rgb = rgb.transpose(1, 2, 0)
     return rgb
-
-
-def get_color():
-    """Return a random color."""
-    return tuple(int(round(i * 255, 0)) for i in hls_to_rgb(randrange(0, 360) / 360, randrange(50, 90, 1) / 100, randrange(30, 80, 10) / 100))
 
 
 def draw_on_source(source, areas, output=None, scale=(0, 65535)):

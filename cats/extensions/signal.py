@@ -12,9 +12,9 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-from math import ceil
 import scipy as sp
-from ..utils.math_functions import gamma_cdf
+from ..utils.math import gamma_cdf
+
 # Method 1:
 # A. Get the noise in the image
 # B. Find the diameter of the signal (3 * sigma for 95% of the data)
@@ -63,9 +63,28 @@ def blinking_cdf(self, params=True):
     if params == True:
         return sp.optimize.curve_fit(gamma_cdf, h[1][:-1], cdf)
     else:
-        return cdf, h[1][:-1]
+        return cdf, h[1]
 
 
-__extension__ = {'Particles': {'blinking_cdf': blinking_cdf},
+def blinking_pdf(self, params=True):
+    """
+    Return the cumulative distribution function of the blinking behavior of the particles.
+
+    The blinking is estimated as the time between two detections.
+    Somehow, it can be fitted with a Gamma distribution, but not a Poisson or such. At least so far...
+
+    Argument:
+        params (bool): if True, returns the fitted parameters of the Gamma distribution (shape and scale parameters) as (fit, cov), as scipy.optimize.curve_fit(). If False, return the histogram as (values, bins + rightmost), as numpy.histogram()
+    """
+    ts = [i - 1 for p in self for i in np.diff(sorted(p['t']))]
+    bins = range(0, self.max_blink)
+    h = np.histogram(ts, normed=True, bins=bins)
+    if params == True:
+        return sp.stats.gamma.fit(h[0]), sp.stats.gamma.fit_loc_scale(h[0])
+    else:
+        return h
+
+__extension__ = {'Particles': {'blinking_cdf': blinking_cdf,
+                               'blinking_pdf': blinking_pdf},
                  'Particle': {'signal': particle_signal,
                               'snr': particle_snr}}

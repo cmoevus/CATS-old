@@ -64,12 +64,12 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     max_processes: the maximum number of simultaneous processes. Max value should be the number of CPUs in the computer.
     verbose: Writes about the time and frames and stuff as it works
     """
-    max_processes = cpu_count() if max_processes is None else max_processes
+    max_processes = cpu_count() - 1 if max_processes is None else max_processes
     # Multiprocess through it
     t = time()
     spots, pool = list(), Pool(max_processes)
     # for blobs in iter(find_blobs(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())):
-    for blobs in pool.imap(find_blobs, iter((i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read()))):
+    for blobs in pool.imap(find_blobs, [(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())]):
         if verbose == True:
             print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][-1] if len(blobs) > 0 else 'i', time() - t), end='')
             stdout.flush()
@@ -80,7 +80,7 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     if verbose is True:
         print('\rFound {0} spots in {1} frames in {2:.2f}s{3}'.format(len(spots), source.length, time() - t, " " * 30), end='\n')
 
-    return np.array(spots, dtype={'names': ('x', 'y', 'sx', 'sy', 'i', 't'), 'formats': (float, float, float, float, int, int)}).view(np.recarray)
+    return np.array(spots, dtype={'names': ('x', 'y', 'sx', 'sy', 'i', 't'), 'formats': (float, float, float, float, int, int)})
 
 
 def find_blobs(*args):

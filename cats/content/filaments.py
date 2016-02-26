@@ -12,16 +12,14 @@ These directives (on top of the other general Howtos in the doc from cats.proces
     - Populate the "Filaments object" with "Filament" objects (see the doc of the class for more info).
     - The attribute 'source' of each Filament returns its source object (the one given to the processor)
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 from .. import extensions
-from .content import Content, ContentUnit
+from .abstract import contents, content
 __all__ = ['Filaments', 'Filament']
 
 
 @extensions.append
-class Filaments(Content):
+class Filaments(contents):
 
     """
     List of filaments from different sources
@@ -31,7 +29,7 @@ class Filaments(Content):
 
 
 @extensions.append
-class Filament(ContentUnit):
+class Filament(content):
 
     """
     Single filament represented as a numpy recarray.

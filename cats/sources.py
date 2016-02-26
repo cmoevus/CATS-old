@@ -185,7 +185,7 @@ class Images(object):
             source = globify(source)
             n_files = len(glob(source))
             if n_files == 0:
-                raise ValueError('Source {0} is empty or does not exist.'.format(source))
+                raise ValueError('Source "{0}" is empty or does not exist.'.format(source))
             elif n_files == 1:
                 javabridge.start_vm(class_path=bioformats.JARS)
                 self._source = bioformats.ImageReader(source)
@@ -236,8 +236,8 @@ class Images(object):
     def length(self):
         """Return the number of frames in the experiment."""
         try:
-            # BioFormats considers Tiff stacks to be in Z. We consider them to be in T. ImageCount is independent of T or Z.
-            self._len = self.source.rdr.getImageCount()
+            # BioFormats considers Tiff stacks to be in Z. We consider them to be in T.
+            self._len = max(self.source.rdr.getSizeT(), self.source.rdr.getSizeT())
         except:
             pass
         try:
@@ -429,7 +429,7 @@ class ROI(Images):
     @property
     def dimensions(self):
         """Return the dimensions of the ROI, as (x, y)."""
-        return self.x.stop - self.x.start, self.y.stop - self.y.start
+        return abs(self.x.stop - self.x.start), abs(self.y.stop - self.y.start)
 
     @property
     def length(self):
@@ -562,7 +562,7 @@ def globify(path):
     return path
 
 
-def same_source(a, b):
+def same_images(a, b):
     """
     Check if two source objects (Images, ROI) refer to the same source of images.
 
@@ -572,6 +572,67 @@ def same_source(a, b):
     return a.source.path == b.source.path
 
 
+def same_time(a, b):
+    """
+    Check if two source objects (Images, ROI) coincide in absolute time.
+
+    Arguments:
+        a, b: the objects to compare
+    """
+    if isinstance(a, ROI):
+        t_a = a.abs_t
+    else:
+        t_a = slice(0, a.length, 1)
+
+    if isinstance(b, ROI):
+        t_b = a.abs_t
+    else:
+        t_b = slice(0, b.length, 1)
+
+    return t_a == t_b
+
+
+def share_channels(a, b):
+    """
+    Check if two source objects (Images, ROI) refer to the same source of images and if they have the same channel, or, minimally, if one set of channels encompass the other set.
+
+    Arguments:
+        a, b: the objects to compare
+    """
+    if same_images(a, b):
+        sets = list()
+        if type(a) == ROI:
+            sets.append(a.c)
+        if type(b) == ROI:
+            sets.append(b.c)
+        # A. One Images object, at least. Images contain all channels.
+        if len(sets) < 2:
+            return True
+        # B. Two ROI objects
+        else:
+            return set(sets[0]).issubset(sets[1]) or set(sets[0]).issuperset(sets[1])
+    else:
+        return False
+
+
+def same_channel(a, b):
+    """
+    Check if two source objects (Images, ROI) refer to the same source of images and if they have the same channel, or, minimally, if one set of channels encompass the other set.
+
+    Arguments:
+        a, b: the objects to compare
+    """
+    if same_images(a, b):
+        if type(a) == ROI and type(b) == ROI:
+            return a.c == b.c
+        elif type(a) == Images and type(b) == Images:
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
 def same_roi(a, b):
     """
     Check if two source objects refer to the same source of images and have the same limits.
@@ -579,3 +640,7 @@ def same_roi(a, b):
     Arguments:
         a, b: the objects to compare
     """
+    if same_images(a, b) and isinstance(a, ROI) and isinstance(b, ROI) and a.x == b.x and a.y == b.y and a.t == b.t and a.c == b.c:
+        return True
+    else:
+        return False

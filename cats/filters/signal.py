@@ -23,7 +23,7 @@ def blinking_thresholding(self, sl=0.01):
         print(p['t'])
         for t, d in enumerate(np.diff(p['t']) - 1):
             if dist.cdf(d) > threshold:
-                print(d, dist.cdf(d))
+                print("CUT!!!", d, dist.cdf(d))
                 filtered.append(p[cut:t + 1])
                 cut = t + 1
         filtered.append(p[cut:])

@@ -15,12 +15,12 @@ These directives (on top of the other general Howtos in the doc from cats.proces
 
 from __future__ import absolute_import, division, print_function
 from .. import extensions
-from .content import Content, ContentUnit
+from .abstract import contents, content
 __all__ = ['Particles', 'Particle']
 
 
 @extensions.append
-class Particles(Content):
+class Particles(contents):
 
     """
     List of particles detected from different sources.
@@ -28,9 +28,19 @@ class Particles(Content):
     Inherits from cats.content.Content.
     """
 
+    def __init__(self, *args, **kwargs):
+        """Start the object and define the base units."""
+        super(Particles, self).__init__(*args, **kwargs)
+        # self._units = {'x': 'px',
+        #                'y': 'px',
+        #                'sx': 'px',
+        #                'sy': 'px',
+        #                'i': 'AU',
+        #                't': 'f'} if '_units' not in kwargs else kwargs['_units']
+
 
 @extensions.append
-class Particle(ContentUnit):
+class Particle(content):
 
     """
     Single particle represented as a numpy recarray.

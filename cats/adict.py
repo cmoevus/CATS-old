@@ -177,8 +177,10 @@ class adict(object):
         """Update the object with the given list/object."""
         # Import dicts, lists and pairs
         for d in args:
-            if 'iteritems' in dir(d) or isinstance(d, adict):
+            if isinstance(d, (adict, dict)):
                 d = d.iteritems()
+            elif len(d) == 0:
+                continue
             elif '__iter__' not in dir(d[0]):
                 d = (d, )
             for k, v in d:
@@ -203,7 +205,7 @@ class adict(object):
         Arguments:
             f: file to save the dataset to. If None, the function returns the content of the would-be file
         """
-        cont = pickle.dumps(self)
+        cont = pickle.dumps(self, protocol=-1)
         if f is not None:
             with open(f, 'w') as data:
                 data.write(cont)
