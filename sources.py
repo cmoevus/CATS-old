@@ -384,9 +384,9 @@ class ROI(Images):
         if isinstance(s, slice):
             pass
         elif hasattr(s, '__iter__'):
-            if s[1] == None:
+            if s[1] is None:
                 s = (s[0], fallback)
-            if s[0] == None:
+            if s[0] is None:
                 s = (0, s[1])
             s = slice(*s)
         elif isinstance(s, int):
