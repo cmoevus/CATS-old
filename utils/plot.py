@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-def errorhist(hist, bins, errors, orientation=0, **kwargs):
+def errorhist(hist, bins, errors, **kwargs):
     """
     Draw a histogram  with error bars from the output the histogram function of CATS.
 

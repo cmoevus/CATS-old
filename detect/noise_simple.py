@@ -1,16 +1,15 @@
 # -*- coding: utf8 -*-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 import numpy as np
 import scipy as sp
 from math import ceil
 from ..content.noise import Noise
+from ..utils.math import gaussian
 
 
 def find_noise(source, window=None):
     """
-    Find the noise in the given set of images
+    Find the noise in the given set of images.
 
     Arguments:
         source: the source files (sources.Images/ROI object)
@@ -21,7 +20,7 @@ def find_noise(source, window=None):
     if window is None:
         window = source.length - 1
     lower_lim, noises = 0, list()
-    for upper_lim in range(window, source.length, window):
+    for upper_lim in range(window, source.length + 1, window):
         # A. Build the mean image
         img = np.zeros(source.shape)
         for f in range(lower_lim, upper_lim):
@@ -49,7 +48,7 @@ def find_noise(source, window=None):
 
 
 def fit_noise(img):
-    """Fits the noise on the image."""
+    """Fit the noise on the image."""
     # A. Use Scott's normal reference rule for the bin width and plot the histogram
     data = img.ravel()
     binwidth = 3.5 * np.std(data) / len(data)**(1 / 3)
@@ -64,17 +63,5 @@ def fit_noise(img):
 
     return fit, cov
 
-
-def gaussian(x, A, m, s):
-    """
-    Return a Gaussian.
-
-    Arguments:
-        x: the values in x
-        A: the amplitude
-        m: the mean
-        s: the standard deviation
-    """
-    return A * np.e**((-(x - m)**2) / (2 * s**2))
 
 __processor__ = {'noise': {'fit': find_noise}}

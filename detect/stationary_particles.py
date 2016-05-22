@@ -68,14 +68,17 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     # Multiprocess through it
     t = time()
     spots, pool = list(), Pool(max_processes)
-    # for blobs in iter(find_blobs(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())):
-    for blobs in pool.imap(find_blobs, [(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())]):
-        if verbose == True:
-            print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][-1] if len(blobs) > 0 else 'i', time() - t), end='')
-            stdout.flush()
-        spots.extend(blobs)
-    pool.close()
-    pool.join()
+    try:
+        # for blobs in iter(find_blobs(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())):
+        for blobs in pool.imap(find_blobs, [(i, blur, threshold, keep_unfit, j) for j, i in enumerate(source.read())]):
+            if verbose == True:
+                print('\rFound {0} spots in frame {1}. Process started {2:.2f}s ago.         '.format(len(blobs), blobs[0][-1] if len(blobs) > 0 else 'i', time() - t), end='')
+                stdout.flush()
+            spots.extend(blobs)
+        pool.close()
+        pool.join()
+    except:
+        pass
 
     if verbose is True:
         print('\rFound {0} spots in {1} frames in {2:.2f}s{3}'.format(len(spots), source.length, time() - t, " " * 30), end='\n')
@@ -99,9 +102,10 @@ def find_blobs(*args):
     """
     args = args[0] if len(args) == 1 else args
     image, blur, threshold, keep_unfit, frame = args[0], args[1], args[2], args[3], args[4]
-    b = blob_log(ndimage.gaussian_filter(image, blur), threshold=threshold, min_sigma=1)
+    b = blob_log(ndimage.gaussian_filter(image, blur), threshold=threshold, min_sigma=1, max_sigma=10)
     blobs = list()
     for y, x, s in b:
+        y, x = int(y), int(x)
         blobs.append((x, y, s, image[y][x], frame))
     return fit_blobs_moments(image, blobs, keep_unfit)
 
@@ -117,7 +121,7 @@ def fit_blobs_moments(img, blobs, keep_unfit):
     for blob in blobs:
 
         # A. Get an ROI of the image
-        r = max(blob[2] + 1 * 2, 3)
+        r = max(blob[2] * np.sqrt(2), 3)
         ylim, xlim = img.shape
         slice_y = slice(max(0, int(floor(blob[1] - r))), min(int(ceil(blob[1] + r)) + 1, ylim))
         slice_x = slice(max(0, int(floor(blob[0] - r))), min(int(ceil(blob[0] + r)) + 1, xlim))
@@ -484,6 +488,11 @@ def link_spots_simple(spots, max_blink, max_disp, verbose):
 def link_spots(spots, max_blink, max_disp, verbose):
     """Correlate spots through time as tracks (or particles)."""
     start_time = time()
+
+    # No datapoints
+    if len(spots) < 2:
+        return list()
+
     # Reorganize spots by frame and prepare the Graph
     G = nx.DiGraph()
     n_frames = max(spots['t']) + 1

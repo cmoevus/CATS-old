@@ -10,7 +10,6 @@ def sy_plot(self, binsize=3):
 
     # Create a dic of position -> lengths of tracks
     bins = np.arange(0, int(ceil(lims[1])), binsize)
-    print(bins)
     y = dict()
     for i in range(0, len(bins)):
         y[i] = list()

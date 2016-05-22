@@ -17,7 +17,7 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 from skimage import io, draw, exposure
-from ..utils import colors
+from ..utils import colors, get_image_depth
 
 
 #
@@ -36,7 +36,6 @@ def particles_perimeters_by_frame(particles, nb_frames, shape):
     frames = [[] for f in range(nb_frames)]
     colours = [colors.random() for i in particles]
     for particle, color in zip(particles, colours):
-        # print(particle.x.mean(), color)
         r_x = int(particle['sx'].mean() * np.sqrt(2)) + 2
         r_y = int(particle['sy'].mean() * np.sqrt(2)) + 2
         # r = max(r_x, r_y)
@@ -51,7 +50,7 @@ def intensity_scale_from_particles(particles):
     """Make an intensity scale for skimage.exposure.rescale_intensity based on particles intensity."""
     i = [s['i'] for p in particles for s in p]
     if len(i) > 1:
-        m, s = np.mean(i), np.std(i)
+        m, s = np.median(i), np.std(i)
         scale = (m - 3 * s, m + 3 * s)
     else:
         raise ValueError('Not enough particles to get intensity scale.')
@@ -174,14 +173,15 @@ def intensity_scale_from_images(source):
     return source.min_intensity(), source.max_intensity()
 
 
-def grayscale_to_rgb(grayscale, max_i=65535):
+def grayscale_to_rgb(grayscale):
     """
     Transform a greyscale image to a 8bits RGB.
 
     Arguments:
         grayscale: the image to transform into 8bit RGB
-        max_i: the maximum value of the grayscale to consider as the maximum value of the RGB image. Default is 65535 (2**16 - 1), the absolute maximal value for a 16bit grayscale image.
+        depth: the depth of the grayscale image. Default is 65535 (2**16 - 1), the absolute maximal value for a 16bit grayscale image.
     """
+    max_i = 2**get_image_depth(grayscale) - 1
     rgb = np.zeros([3] + list(grayscale.shape), dtype=np.uint8)
     rgb[..., :] = grayscale / max_i * 255
     rgb = rgb.transpose(1, 2, 0)

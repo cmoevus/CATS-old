@@ -1,4 +1,5 @@
 """Build an histogram of positions."""
+from __future__ import absolute_import, division, print_function
 from math import ceil
 from ..utils.math import resample
 import numpy as np
@@ -46,7 +47,7 @@ def histogram(self, prop='x', binsize=None, bins=10, mean=True, bs_n=1000, ci=0.
         # D1. Get all the resampled histograms
         hists = list()
         for d in resample(data, bs_n):
-            hists.append(np.histogram(d, bins=bins)[0])
+            hists.append(np.histogram(d, bins=bins, **kwargs)[0])
         hists.append(hist)
         hists = np.array(hists)
 

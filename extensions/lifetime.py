@@ -51,8 +51,10 @@ def survival_bins(self, bs_n=1000, binsize=None, ci=0.95, fraction=True):
             last = dt
     no_bins = False
     if binsize is None:
-        diff = np.diff(sorted(set(dist)))
-        binsize = diff[0] if diff[-1] != 0 else diff[1]
+        # I DO NOT UNDERSTAND THE TWO NEXT LINE ANYMORE AND I THINK IT MAY BE A MISTAKE
+        # diff = np.diff(sorted(set(dist)))
+        # binsize = diff[0] if diff[-1] != 0 else diff[1]
+        binsize = diff[0] if diff[-1] != 0 else diff[1]  # I DO NOT UNDERSTAND THIS ANYMORE
         no_bins = True
     n_bins = int(last / binsize) + 1
 
@@ -118,7 +120,8 @@ def survival(self, fraction=True):
 
 def halflife(self, ci=0.95):
     """Return the half-life of the particles based on the survival plot."""
-    x, y, e = self.survival_bins(ci)
+    x, y, e = self.survival_bins(ci=ci)
+    y = [i[1] for i in e]  # Use the mean value rather than sample value.
     if y[-1] <= 0:
         x, y = x[:-1], y[:-1]
     fit = np.polyfit(x, np.log(y), 1)

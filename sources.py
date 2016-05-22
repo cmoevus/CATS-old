@@ -16,7 +16,40 @@ import bioformats
 import os
 from skimage import io
 from . import extensions
+from .utils.slicify import slicify
 __all__ = ['ImageDir', 'Images', 'ROI', 'globify']
+
+
+def pil_mode_to_depth(v):
+    """Transform the value v of PIL's image 'mode' into the depth of the image, in bits."""
+    convert = {
+        1: 1,
+        "L": 8,
+        "P": 8,
+        "RGB": 8,
+        "RGBA": 8,
+        "CMYK": 8,
+        "YCbCr": 8,
+        "I": 32,
+        "I;16": 16,
+        "F": 32
+    }
+    return convert(v)
+
+
+def bioformats_pixeltype_to_depth(v):
+    """Transform the value v of bioformats' getPixelType() into the depth of the image, in bits."""
+    convert = {
+        7: 1,  # DOUBLE, not sure what this is
+        6: 1,  # FLOAT, not sure what this is
+        2: 16,  # INT16
+        4: 32,  # INT32
+        0: 8,  # INT8
+        3: 16,  # UINT16
+        5: 32,  # UINT32
+        1: 8,  # UINT8
+    }
+    return convert(v)
 
 
 class ImageDir(object):
@@ -162,7 +195,7 @@ class Images(object):
     This object will save information about the images so that it can be used even in the absence of the images, post pickling/unpickling. It does not save the images, only basic metadata about them.
 
     Keyword argument:
-        source: the path to the file or directory of images. In the latter case, the path can contain wildcards to select specific files within the dict.
+        source: the path to the file or directory of images. In the latter case, the path can contain wildcards to select specific files within the dict. Can be a list or dict of dirs, for channels (like ImageDir)
     """
 
     def __init__(self, source):
@@ -195,7 +228,7 @@ class Images(object):
         elif type(source) in [tuple, set, list]:
             self._source = ImageDir(*source)
         elif type(source) is dict:
-            self._source = ImageDir(**source)
+            self._source = ImageDir(source)
         # C. Object
         elif isinstance(source, bioformats.ImageReader) or isinstance(source, ImageDir):
             self._source = source
@@ -360,9 +393,9 @@ class ROI(Images):
 
     Keyword arguments:
         images: the source Images object, or a path to the images (see doc from Images).
-        x: slice (or list) of the initial and final (excluded) pixel to select, in the x axis. If None, selects all pixels.
-        y: slice (or list) of the initial and final (excluded) pixel to select, in the y axis. If None, selects all pixels.
-        t: slice (or list) of the initial and final (excluded) frame to select. If None, selects all frames.
+        x <slice, tuple, int>: the initial and final (excluded) pixel to select, in the x axis. If None, selects all pixels. If int, only one pixel.
+        y <slice, tuple, int>: slice (or list) of the initial and final (excluded) pixel to select, in the y axis. If None, selects all pixels. If int, only one pixel.
+        t <slice, tuple, int>: slice (or list) of the initial and final (excluded) frame to select. If None, selects all frames. If int, only one frame.
         c: channels to use (indice of the first channel is 0). If None, selects all channels.
     """
 
@@ -370,32 +403,6 @@ class ROI(Images):
             """Build the image object and set the limits."""
             self.images = images if isinstance(images, Images) is True else Images(images)
             self.x, self.y, self.t, self.c = x, y, t, c
-
-    def _slicify(self, s, fallback=slice(None)):
-        """
-        Transform the input into a slice.
-
-        Acceptable input:
-            slice
-            list/tuple
-            int: the upper limit
-            Everything else will be replaced by a _slicified given fallback value
-        """
-        if isinstance(s, slice):
-            pass
-        elif hasattr(s, '__iter__'):
-            if s[1] is None:
-                s = (s[0], fallback)
-            if s[0] is None:
-                s = (0, s[1])
-            s = slice(*s)
-        elif isinstance(s, int):
-            s = slice(0, s)
-        else:
-            s = self._slicify(fallback)
-        if s.step is None:
-            s = slice(s.start, s.stop, 1)
-        return s
 
     @property
     def source(self):
@@ -444,7 +451,7 @@ class ROI(Images):
     @x.setter
     def x(self, value):
         """Set the limits of the ROI in x."""
-        self._x = self._slicify(value, self.images.dimensions[0])
+        self._x = slicify(value, slice(0, self.images.dimensions[0], 1))
 
     @property
     def abs_x(self):
@@ -469,7 +476,7 @@ class ROI(Images):
     @y.setter
     def y(self, value):
         """Set the limits of the ROI in y."""
-        self._y = self._slicify(value, self.images.dimensions[1])
+        self._y = slicify(value, slice(0, self.images.dimensions[1], 1))
 
     @property
     def abs_y(self):
@@ -494,7 +501,7 @@ class ROI(Images):
     @t.setter
     def t(self, value):
         """Set the limits of the ROI in time."""
-        self._t = self._slicify(value, self.images.length)
+        self._t = slicify(value, slice(0, self.images.length, 1))
 
     @property
     def abs_t(self):
@@ -530,7 +537,7 @@ class ROI(Images):
 
     def get(self, frame):
         """Return the given frame."""
-        i = self.images.get(frame + self.t.start)[self.y, self.x]
+        i = self.images.get(frame * self.t.step + self.t.start)[self.y, self.x]
         return i if i.ndim == 2 else i[:, :, self.c]
 
     def __repr__(self):

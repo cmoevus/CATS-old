@@ -57,8 +57,14 @@ def gaussian_2d(coords, A, x0, y0, sx, sy):
     return (A * np.exp((x - x0)**2 / (-2 * sx**2) + (y - y0)**2 / (-2 * sy**2))).ravel()
 
 
-def exp_decay(x, k, b):
-    return np.e**(-k * x + b)
+def exp_decay(x, N, k):
+    """Exponential decay."""
+    return N * np.e**(-k * x)
+
+
+def two_exp_decay(x, a, k1, k2):
+    """Sum of two exponential decays."""
+    return a * np.exp(-k1 * (x)) + (1 - a) * np.exp(-k2 * (x))
 
 
 def resample(dist, n=1000):

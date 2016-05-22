@@ -80,7 +80,7 @@ class contents(list, dadict):
 
     def __getitem__(self, item):
         """Orchestrate items between list and dict."""
-        if type(item) is int:
+        if type(item) is not str:
             return list.__getitem__(self, item)
         else:
             return dadict.__getitem__(self, item)
