@@ -25,11 +25,14 @@ def survival_bins(dist, bs_n=1000, binsize=None, ci=0.95, fraction=True):
     y: Fraction of the data left
     e: error estimate
     """
-    # A. Build the distribution of dwell times
+    # A. Deal with the bins
     no_bins = False
     if binsize is None:
         diff = sorted(np.diff(sorted(set(dist))))
-        binsize = diff[0]  # IS THIS AN ERROR? SHOULD NOT IT BE THAT diff IS SORTED? SO THAT THE BINSIZE IS THE MINIMUM DISTANCE DETECTED?
+        if len(diff) > 0:
+            binsize = diff[0]
+        else:
+            binsize = 1
         no_bins = True
     n_bins = int(max([i for i in dist if i < np.inf]) / binsize) + 1
 
