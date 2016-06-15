@@ -51,10 +51,13 @@ def survival_bins(self, bs_n=1000, binsize=None, ci=0.95, fraction=True):
             last = dt
     no_bins = False
     if binsize is None:
-        # I DO NOT UNDERSTAND THE TWO NEXT LINE ANYMORE AND I THINK IT MAY BE A MISTAKE
-        # diff = np.diff(sorted(set(dist)))
+        diff = np.diff(sorted(set(dist)))
+        # I DO NOT UNDERSTAND THIS ANYMORE. CHANGED FOR THE BEST?
         # binsize = diff[0] if diff[-1] != 0 else diff[1]
-        binsize = diff[0] if diff[-1] != 0 else diff[1]  # I DO NOT UNDERSTAND THIS ANYMORE
+        if len(diff) > 0:
+            binsize = diff[0]
+        else:
+            binsize = 1
         no_bins = True
     n_bins = int(last / binsize) + 1
 

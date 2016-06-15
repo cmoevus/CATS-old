@@ -160,23 +160,25 @@ class contents(list, dadict):
         """Handle advanced pickling."""
         return (type(self), tuple(), self.__dict__, iter([p for p in self]))
 
-    def append(self, obj):
+    def append(self, obj, switch_parenthood=True):
         """Add a spot and its source to the list."""
         try:
             if obj.source not in self.sources:
                 self.sources.append(obj.source)
-            obj.parent = self
+            if switch_parenthood == True:
+                obj.parent = self
         except AttributeError:
             raise ValueError('Cannot append: invalid data type.')
         super(contents, self).append(obj)
 
-    def extend(self, objs):
+    def extend(self, objs, switch_parenthood=False):
         """Add spots and their sources to the list."""
         try:
             for obj in objs:
                 if obj.source not in self.sources:
                     self.sources.append(obj.source)
-                obj.parent = self
+                if switch_parenthood == True:
+                    obj.parent = self
         except AttributeError:
             raise ValueError('Cannot append: invalid data type.')
         super(contents, self).extend(objs)
