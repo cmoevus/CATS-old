@@ -10,7 +10,7 @@ Hence, Detections aggregate into contents which aggregate into contents.
 """
 from __future__ import absolute_import, division, print_function
 from .. import extensions, defaults, sources
-from ..adict import dadict
+# from ..adict import dict
 import numpy as np
 from copy import deepcopy
 import pickle
@@ -20,12 +20,11 @@ __all__ = ['contents', 'content', 'detection']
 
 
 @extensions.append
-class contents(list, dadict):
-
+class contents(list):
     """
     More or less abstract class for any type of content.
 
-    contents classes inherit from lists and dadict. They contain dictionary items and list items. The __iter__ function (used in iterations, like  for loops) returns the content of the list (i.e.: the actual content), whereas the content of the dict (parameters, attributes, etc.) can be accessed via the usual dict methods items(), keys(), values() and their iterative equivalents.
+    contents classes inherit from lists and dict. They contain dictionary items and list items. The __iter__ function (used in iterations, like  for loops) returns the content of the list (i.e.: the actual content), whereas the content of the dict (parameters, attributes, etc.) can be accessed via the usual dict methods items(), keys(), values() and their iterative equivalents.
 
     Example:
         c = contents(source1, source2, processor=processors.common, option1='value')
@@ -50,7 +49,6 @@ class contents(list, dadict):
             - any argument for the processor to use
             - whatever you want, really.
         """
-        dadict.__init__(self)
 
         # Set the _defaults dict
         if self.__class__.__name__ in dir(defaults):
@@ -73,17 +71,6 @@ class contents(list, dadict):
         # Default to relative positions if need be
         if 'abs_position' not in kwargs:
             self.abs_position = False
-
-    def __repr__(self):
-        """Mix representations from list and dadict."""
-        return list.__repr__(self) + '\n' + dadict.__repr__(self)
-
-    def __getitem__(self, item):
-        """Orchestrate items between list and dict."""
-        if type(item) is not str:
-            return list.__getitem__(self, item)
-        else:
-            return dadict.__getitem__(self, item)
 
     def copy(self):
         """Copy the list and dict parts of the object."""
@@ -108,26 +95,25 @@ class contents(list, dadict):
         A single instance will be transformed into a list.
 
         """
-        return self.__getprop__('sources')
-
+        return self.__dict__['sources']
     @sources.setter
     def sources(self, value):
         """Add/Set sources."""
         # A. Transform input into proper sources
-        if type(value) is str or isinstance(value, sources.Images):
+        if type(value) is str or isinstance(value, sources.ROI):
             value = [value]
         for i in range(len(value)):
             if type(value[i]) is str:
-                value[i] = sources.Images(value[i])
+                value[i] = sources.ROI(value[i])
 
         # B. If some sources were removed, remove the associated spots. Also, avoid duplicates.
-        if dadict.__contains__(self, 'sources') == True and len(self.sources) != 0:
+        if self.__dict__.__contains__('sources') and len(self.sources) != 0:
             value = set(value)
-            diff = value.symmetric_difference(self.__getprop__('sources'))
+            diff = value.symmetric_difference(self.__dict__['sources'])
             remove = diff.difference(value)
             if len(remove) != 0:
                 list.__init__(self, [c for c in self if c.source not in remove])
-        self.__setprop__('sources', list(value))
+        self.__dict__['sources'] = list(value)
 
     def process(self):
         """Process the sources to find content. Erase previous content."""
@@ -175,12 +161,12 @@ class contents(list, dadict):
         """Add spots and their sources to the list."""
         try:
             for obj in objs:
-                if obj.source not in self.sources:
+                if hasattr(obj, 'source') and obj.source not in self.sources:
                     self.sources.append(obj.source)
                 if switch_parenthood == True:
                     obj.parent = self
-        except AttributeError:
-            raise ValueError('Cannot append: invalid data type.')
+        except AttributeError as e:
+            raise ValueError('Cannot extend: invalid data type.', e)
         super(contents, self).extend(objs)
 
 
@@ -219,8 +205,8 @@ class content(np.ndarray):
     def __getitem__(self, item):
         """Return columns as ndarray, rather than content, and lines as detections."""
         i = super(content, self).__getitem__(item)
-        if self.dtype.names and item in self.dtype.names:
-            # What's weird is that recarray do not seem to need the second .view()... I don't understand all of it, though.
+        if self.dtype.names is not None and type(item) == str and item in self.dtype.names:
+            # What's weird is that recarray do not seem to need the second .view()... I don't understand most of it, though.
             return i.view(np.ndarray).view(self.dtype.fields[item][0])
         else:
             if type(i) == detection:
@@ -231,7 +217,7 @@ class content(np.ndarray):
         """Support column access by attribute and fetching attributes in the parent classes."""
         if self.dtype.names and attr in self.dtype.names:
             return self[attr]
-        elif getattr(self, 'parent', None) is not None:
+        elif attr != 'parent' and getattr(self, 'parent', None) is not None:
             return getattr(self.parent, attr)
         else:
             raise AttributeError("'{0}' not found".format(attr))

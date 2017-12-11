@@ -7,7 +7,7 @@ from __future__ import print_function
 # numpy's record arrays do not work with future unicode_literals
 # from __future__ import unicode_literals
 
-from .adict import dadict
+# from .adict import dadict
 from .sources import Images, ROI, globify
 from . import defaults, extensions, content
 import os
@@ -25,7 +25,7 @@ __all__ = ['Dataset', 'Experiment']
 
 
 @extensions.append
-class Dataset(dadict):
+class Dataset(dict):
 
     """
     A dataset is a collection of data that have the same experimental conditions.
@@ -217,7 +217,7 @@ class Dataset(dadict):
 
 
 @extensions.append
-class Experiment(dadict):
+class Experiment(dict):
 
     """
     Representation of a single-molecule experiment.
@@ -240,7 +240,7 @@ class Experiment(dadict):
 
     def __init__(self, *args, **kwargs):
         """Load given sources and arguments."""
-        super(dadict, self).__init__(_defaults=defaults.Experiment)
+        super(dict, self).__init__(_defaults=defaults.Experiment)
         self.__setprop__('sources', [])
         self.__setprop__('datasets', [])
         args = list(args)

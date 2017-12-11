@@ -17,7 +17,8 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 from skimage import io, draw, exposure
-from ..utils import colors, get_image_depth
+from ..utils import get_image_depth
+from cats import colors
 
 
 #
@@ -219,6 +220,7 @@ def draw_on_source(source, areas, output=None, scale=(0, 65535)):
             io.imsave("{0}/{1}.tif".format(output, t), rgb)
 
     return images if output is None else None
+
 
 __extension__ = {
     'Particles': {'draw': draw_particles},

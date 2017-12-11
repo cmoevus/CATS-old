@@ -34,6 +34,7 @@ def survival_bins(self, bs_n=1000, binsize=None, ci=0.95, fraction=True):
     x: Time values
     y: Fraction of the data left
     e: error estimate
+    
     """
     # Find the cutoff of the data, i.e. the shortest dataset.
     cutoff = np.inf

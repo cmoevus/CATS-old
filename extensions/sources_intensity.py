@@ -22,7 +22,8 @@ def min_intensity(self):
             min_i = min_i_i
     return min_i
 
-__extension__ = {'Images': {
+
+__extension__ = {'ROI': {
     'max_intensity': max_intensity,
     'min_intensity': min_intensity,
 }}

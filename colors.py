@@ -6,6 +6,8 @@ from random import randrange
 from colorsys import hls_to_rgb, rgb_to_hls
 from math import ceil
 
+import cats.images
+
 
 def random():
     """Return a random yet curated RGB color as a 3-tuple of int[0, 255]."""
@@ -131,6 +133,21 @@ def nuances(rgb, n, gradient=False, r=(0, 1)):
         if v < h:
             v += r[0]
         variants.append(v)
-    if gradient == True:
+    if gradient:
         variants = sorted(variants)
     return [hls_to_rgb(v, l, s) for v in variants]
+
+
+def blend_rgb_colors(*colors):
+    """Blend RGB colors together.
+
+    Parameters:
+    ----------
+    colors: 3-tuples
+        All the RGB colors to blend, with matplotlib-style values 0 to 1.
+
+    """
+    c = list()
+    for i in zip(*colors):
+        c.append(min(np.sum(i), 1))
+    return c

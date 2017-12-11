@@ -6,10 +6,10 @@ from __future__ import division
 from __future__ import print_function
 # from __future__ import unicode_literals
 from multiprocessing import cpu_count
-from .adict import adict
+# from .adict import adict
 __all__ = ['Experiment', 'Images']
 
-Experiment = adict({
+Experiment = dict({
     'max_processes': cpu_count(),
     'particles': {
         'find': 'stable_particles',  # The method to use from the linkage module
@@ -29,11 +29,11 @@ Experiment = adict({
     }
 })
 
-Particles = adict({
+Particles = dict({
     'processor': 'stationary_particles'
 })
 
-Images = adict({
+Images = dict({
     'barrier_detection': {
         'frames': None,  # The frames to use for finding the barriers. If None, uses all the images.
     },

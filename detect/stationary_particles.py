@@ -83,7 +83,8 @@ def detect_spots(source, blur, threshold, keep_unfit=False, max_processes=None, 
     if verbose is True:
         print('\rFound {0} spots in {1} frames in {2:.2f}s{3}'.format(len(spots), source.length, time() - t, " " * 30), end='\n')
 
-    return np.array(spots, dtype={'names': ('x', 'y', 'sx', 'sy', 'i', 't'), 'formats': (float, float, float, float, int, int)})
+    # return np.array(spots, dtype={'names': ('x', 'y', 'sx', 'sy', 'i', 't'), 'formats': (float, float, float, float, int, int)})
+    return np.array(spots, dtype={'names': ('x', 'y', 's', 'i', 't'), 'formats': (float, float, float, int, int)})
 
 
 def find_blobs(*args):
@@ -107,7 +108,8 @@ def find_blobs(*args):
     for y, x, s in b:
         y, x = int(y), int(x)
         blobs.append((x, y, s, image[y][x], frame))
-    return fit_blobs_moments(image, blobs, keep_unfit)
+    # return fit_blobs_moments(image, blobs, keep_unfit)
+    return blobs
 
 
 def fit_blobs_moments(img, blobs, keep_unfit):
@@ -156,9 +158,7 @@ def fit_blobs_moments(img, blobs, keep_unfit):
 
 
 def fit_blobs_curvefit_1D(img, blobs, keep_unfit):
-    """
-    Fit 2D Gaussians by splitting them in two 1D gaussians.
-    """
+    """Fit 2D Gaussians by splitting them in two 1D gaussians."""
     # A. Get the noise value, to provide an estimated amplitude for unfit particles
     if keep_unfit == True:
         try:
@@ -392,7 +392,9 @@ def fit_blobs_curvefit_2D(img, blobs, keep_unfit):
         data = img[y[0]:y[1], x[0]:x[1]]
         coords = np.meshgrid(np.arange(data.shape[0]), np.arange(data.shape[1]))
         try:
-            fit, cov = curve_fit(gaussian_2d, coords, data.ravel(), p0=(blob[3], blob[0] - x[0], blob[1] - y[0], blob[2], data.min()))
+            fit, cov = curve_fit(gaussian_2d, coords, data.ravel(),
+                                 p0=(blob[3], blob[0] - x[0], blob[1] - y[0], blob[2], data.min()),
+                                 bounds=([blob[3] / 2, 0, 0, 0, data.min()], [blob[3] * 2, data.shape[1], data.shape[0], np.inf, data.mean()]))
             spr_blob = [x[0] + fit[1], y[0] + fit[2], abs(fit[3]), fit[0]]
             if len(blob) > 4:
                 spr_blob.extend(blob[4:])
@@ -539,10 +541,10 @@ def link_spots(spots, max_blink, max_disp, verbose):
     for track in nx.weakly_connected_component_subgraphs(G):
         track_sort = sorted([s for s in track.nodes()], key=lambda a: spots[a]['t'])
         track_reduced = graph.transitive_reduction(track, order=track_sort)
-        for n, i in track_reduced.in_degree().items():
+        for n, i in track_reduced.in_degree():
             if i > 1:
                 keep_nearest_neighbor_only(track, track_reduced, n, track_reduced.predecessors(n))
-        for n, i in track_reduced.out_degree().items():
+        for n, i in track_reduced.out_degree():
             if i > 1:
                 keep_nearest_neighbor_only(track, track_reduced, n, track_reduced.successors(n))
 
@@ -583,8 +585,8 @@ def keep_nearest_neighbor_only(track, track_reduced, n, a):
         n: the main node
         a: list of competing nodes
     """
-    neighbors = set(track.predecessors(n) + track.successors(n))
-    common_neighbors = sorted([(len(neighbors.intersection(track.predecessors(i) + track.successors(i))), i) for i in a])
+    neighbors = set(list(track.predecessors(n)) + list(track.successors(n)))
+    common_neighbors = sorted([(len(neighbors.intersection(list(track.predecessors(i)) + list(track.successors(i)))), i) for i in a])
     for l, a_n in common_neighbors[:-1]:
         track_reduced.remove_edge(*sorted([n, a_n]))
         track.remove_edge(*sorted([n, a_n]))

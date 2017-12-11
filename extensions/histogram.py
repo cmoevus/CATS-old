@@ -5,7 +5,7 @@ from ..utils.math import resample
 import numpy as np
 
 
-def histogram(self, prop='x', binsize=None, bins=10, mean=True, bs_n=1000, ci=0.95, **kwargs):
+def histogram(self, prop='x', binsize=None, bins=10, feature='mean', bs_n=1000, ci=0.95, **kwargs):
     """
     Draw an histogram of the given property.
 
@@ -13,7 +13,11 @@ def histogram(self, prop='x', binsize=None, bins=10, mean=True, bs_n=1000, ci=0.
         prop: any detection property (x, y, s, t, i, etc.) or 'l', for length of tracks.
         binsize: number of units per bin.
         bins: If binsize is not set, defaults to this argument. Behaves like numpy.histogram
-        mean: if True, the mean value of each 'content' will be plotted. If False, the value of each detection of each 'content' will be plotted.
+        feature:
+            - 'mean' : the mean value of each 'content' will be plotted.
+            - 'detections' : the value of each detection of each 'content' will be plotted.
+            - 'start' : the value of the first pixel will be plotted
+            - 'end' : the value of the first pixel will be plotted
         bs_n (int or bool): number of bootstrap iterations. If False or 0, no bootstrap.
         ci: confidence interval (float)
         Additional arguments will be passed to numpy.histogram.
@@ -26,10 +30,14 @@ def histogram(self, prop='x', binsize=None, bins=10, mean=True, bs_n=1000, ci=0.
     # A. Build the original distribution
     if prop == 'l':
         data = [p.dwell_time() for p in self]
-    elif mean == True:
+    elif feature == 'mean':
         data = [p[prop].mean() for p in self]
-    else:
+    elif feature == 'detections':
         data = [i for p in self for i in p[prop]]
+    elif feature == 'start':
+        data = [p[0][prop] for p in self]
+    elif feature == 'end':
+        data = [p[-1][prop] for p in self]
 
     # B. Figure out the bins
     if binsize is not None:
@@ -59,5 +67,6 @@ def histogram(self, prop='x', binsize=None, bins=10, mean=True, bs_n=1000, ci=0.
             stats.append((d[lb], np.mean(d), d[ub]))
         return hist, bins, stats
     return hist, bins
+
 
 __extension__ = {'Particles': {'histogram': histogram}}
